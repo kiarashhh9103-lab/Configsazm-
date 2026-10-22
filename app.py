@@ -54,7 +54,7 @@ def add_user(user_id, first_name, username):
         c.execute("INSERT INTO users (user_id, first_name, username, join_date) VALUES (?, ?, ?, ?)", (user_id, first_name, username, str(datetime.datetime.now())))
         conn.commit()
         conn.close()
-        return True
+        return True 
     conn.commit()
     conn.close()
     return False
@@ -320,6 +320,21 @@ def send_broadcast(message):
     bot.send_message(message.chat.id, f"✅ برای {success} نفر ارسال شد.")
     start(message)
 
+# ================= آموزش اتصال =================
+@bot.message_handler(func=lambda message: message.text == "📚 آموزش اتصال")
+def tutorial(message):
+    text = (
+        "📚 **آموزش اتصال به کانفیگ:**\n\n"
+        "1️⃣ برنامه **NikaNG** را باز کنید.\n"
+        "2️⃣ روی علامت **+** (بالا سمت راست) کلیک کنید.\n"
+        "3️⃣ گزینه **Import from Clipboard** (وارد کردن از حافظه) را بزنید.\n"
+        "4️⃣ حالا کانفیگی که ربات به شما داده (متن طولانی) را کپی کرده و در آنجا پیست کنید.\n"
+        "5️⃣ روی کانفیگ ساخته شده کلیک کرده و دکمه اتصال (Play) را بزنید.\n\n"
+        "🚀 حالا می‌توانید به اینترنت آزاد وصل شوید!"
+    )
+    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+
+# ================= ساخت کانفیگ =================
 @bot.message_handler(func=lambda message: message.text == "🛠 ساخت کانفیگ جدید")
 def start_config(message):
     user_id = message.from_user.id
@@ -365,13 +380,4 @@ def cancel_inline_flow(call):
     name = call.from_user.first_name
     welcome_text = f"سلام {name} عزیز، به بات ساخت کانفیگ خوش اومدی 🚀\n\n🤖 **این ربات توسط @KiarashAi ساخته شده است.**\n\nاز منوی پایین انتخاب کن:"
     
-    if is_admin(user_id):
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add(types.KeyboardButton("🛠 ساخت کانفیگ جدید"), types.KeyboardButton("👑 پنل مدیریت"))
-        markup.add(types.KeyboardButton("📁 کانفیگ‌های من"), types.KeyboardButton("📢 ارسال پیام همگانی"))
-        bot.send_message(chat_id, f"سلام {name} عزیز، به پنل مدیریت خوش اومدی 👑", reply_markup=markup, parse_mode='Markdown')
-    else:
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add(types.KeyboardButton("🛠 ساخت کانفیگ جدید"), types.KeyboardButton("📁 کانفیگ‌های من"))
-        markup.add(types.KeyboardButton("📚 آموزش اتصال"))
-        bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode='Markd
+    if is_
