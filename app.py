@@ -243,16 +243,17 @@ def wiz_cap_m(m):
 def wiz_win(c):
     bot.answer_callback_query(c.id)
     if c.data == "m_win":
-        msg = bot.send_message(c.message.chat.id, "🎁 تعداد برنده‌ها را وارد کن (مثلاً `5`):")
+        msg = bot.send_message(c.message.chat.id, "تعداد برنده‌ها را وارد کن (مثلاً 5):")
         return bot.register_next_step_handler(msg, wiz_win_m)
     admin_state[c.from_user.id]['winners'] = int(c.data.split("_")[1])
     bot.edit_message_text("✅ ثبت شد.", c.message.chat.id, c.message.message_id)
-    msg = bot.send_message(c.message.chat.id, "📢 **گام ۵/۵: کانال**\nآیدی
-    
+    msg = bot.send_message(c.message.chat.id, "آیدی کانال (مثلاً @MyChannel):")
+    bot.register_next_step_handler(msg, wiz_chan)
+
 def wiz_win_m(m):
-    if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ عدد بفرست!")
+    if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ فقط عدد بفرست!")
     admin_state[m.from_user.id]['winners'] = int(m.text)
-    msg = bot.send_message(m.chat.id, "📢 **گام ۵/۵: کانال**\nآیدی کانال (مثلاً `@MyChannel`):")
+    msg = bot.send_message(m.chat.id, "آیدی کانال (مثلاً @MyChannel):")
     bot.register_next_step_handler(msg, wiz_chan)
 
 def wiz_chan(m):
@@ -267,12 +268,7 @@ def wiz_chan(m):
         mid = bot.send_message(channel, f"🎉 **{data['title']}**\nبرای شرکت کلیک کن:", reply_markup=kb, parse_mode='Markdown').message_id
         db_query("UPDATE draws SET message_id=? WHERE id=?", (mid, did), commit=True)
         
-        # متن به چند خط شکسته شده تا ارور سینتکس نده
-        msg_text = (
-            f"✅ **قرعه‌کشی ارسال شد!**\n\n"
-            f"لینک اختصاصی:\n"
-            f"https://t.me/{BOT_USERNAME}?start=draw_{did}"
-        )
+        msg_text = f"✅ **قرعه‌کشی ساخته شد!**\nلینک:\nhttps://t.me/{BOT_USERNAME}?start=draw_{did}"
         bot.send_message(m.chat.id, msg_text, parse_mode='Markdown')
     except Exception as e: 
         bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
