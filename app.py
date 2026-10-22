@@ -349,18 +349,18 @@ def cfg_start(m):
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_1")
 def cfg_name(c):
-    bot.answer_callback_query(c.id)
+    bot.answer_callback_query(c.id) # این خط لودینگ رو برمیداره
     user_data[c.message.chat.id] = {}
     bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎲 خودکار", callback_data="c_rand", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")))
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
 def cfg_cancel(c):
-    bot.answer_callback_query(c.id)
+    bot.answer_callback_query(c.id) # این خط لودینگ رو برمیداره
     user_data.pop(c.message.chat.id, None); bot.edit_message_text("لغو شد.", c.message.chat.id, c.message.message_id); start(c.message)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_rand")
 def cfg_rand(c):
-    bot.answer_callback_query(c.id)
+    bot.answer_callback_query(c.id) # این خط لودینگ رو برمیداره
     n = random.choice(RANDOM_NAMES) + "-" + str(random.randint(10,99)); user_data[c.message.chat.id]['name'] = f"{n} (KiarashAi)"
     bot.edit_message_text(f"اسم: **{n} (KiarashAi)**", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
 
@@ -371,7 +371,7 @@ def cfg_get_name(m):
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_gen")
 def cfg_gen(c):
-    bot.answer_callback_query(c.id)
+    bot.answer_callback_query(c.id) # این خط لودینگ رو برمیداره
     cid = c.message.chat.id
     if cid not in user_data: return
     bot.edit_message_text("⏳ در حال ساخت...", cid, c.message.message_id)
@@ -383,7 +383,6 @@ def cfg_gen(c):
     
     bot.send_message(SUPER_ADMIN_ID, f"🔔 **کانفیگ جدید!**\n👤 {c.message.chat.first_name}\n🆔 `{cid}`", parse_mode='Markdown')
     user_data.pop(cid, None)
-
 app = Flask(__name__)
 @app.route('/')
 def index(): return "Bot is running!"
