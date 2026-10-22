@@ -1,10 +1,9 @@
-import os, threading, telebot, random, datetime, time, json, base64, urllib.request, pymongo
+import os, threading, telebot, sqlite3, random, datetime, time, json, base64, urllib.request
 from flask import Flask
 from telebot import types
 
-# ⚠️ توکن و لینک دیتابیس اینجاست
+# توکن ربات
 BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
-MONGO_URI = "mongodb+srv://KiarashAi:KiarashAi@cluster0.xl9mcbq.mongodb.net/"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Kiawirebot"
 
@@ -15,22 +14,32 @@ JUNK_I1 = "<b 0xc10000000114367096bb0fb3f58f3a3fb8aaacd61d63a1c8a40e14f7374b8a62
 bot = telebot.TeleBot(BOT_TOKEN)
 user_data, admin_state = {}, {}
 
-client = pymongo.MongoClient(MONGO_URI)
-db = client['kiawire_bot']
-users_col = db['users']
-configs_col = db['configs']
-settings_col = db['settings']
-draws_col = db['draws']
-parts_col = db['participants']
+def init_db():
+    conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, username TEXT, join_date TEXT, is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, config_name TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS draws (id INTEGER PRIMARY KEY, channel TEXT, end_time TEXT, title TEXT, status TEXT, message_id INTEGER, max_parts INTEGER, winners_count INTEGER)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS participants (draw_id INTEGER, user_id INTEGER, first_name TEXT)''')
+    c.execute("INSERT OR IGNORE INTO settings VALUES ('limit', '3')")
+    c.execute("INSERT OR IGNORE INTO settings VALUES ('bot_locked', '0')")
+    conn.commit(); conn.close()
+init_db()
 
-def is_admin(uid): return uid == SUPER_ADMIN_ID or (users_col.find_one({"user_id": uid}) or {}).get("is_admin", 0) == 1
-def is_banned(uid): return (users_col.find_one({"user_id": uid}) or {}).get("is_banned", 0) == 1
-def get_setting(k): return (settings_col.find_one({"key": k}) or {}).get("value", "0")
-def set_setting(k, v): settings_col.update_one({"key": k}, {"$set": {"value": str(v)}}, upsert=True)
+def db_query(query, args=(), fetch=False, commit=False):
+    conn = sqlite3.connect('bot_data.db'); c = conn.cursor(); c.execute(query, args)
+    res = c.fetchone() if fetch else None
+    if commit: conn.commit()
+    conn.close(); return res
+
+def is_admin(uid): return uid == SUPER_ADMIN_ID or (db_query("SELECT is_admin FROM users WHERE user_id=?", (uid,), fetch=True) or [0])[0] == 1
+def is_banned(uid): return (db_query("SELECT is_banned FROM users WHERE user_id=?", (uid,), fetch=True) or [0])[0] == 1
+def get_setting(k): return db_query("SELECT value FROM settings WHERE key=?", (k,), fetch=True)[0]
+def set_setting(k, v): db_query("UPDATE settings SET value=? WHERE key=?", (str(v), k), commit=True)
 
 def add_user(uid, name, user):
-    if not users_col.find_one({"user_id": uid}):
-        users_col.insert_one({"user_id": uid, "first_name": name, "username": user, "join_date": str(datetime.datetime.now()), "is_admin": 0, "is_banned": 0})
+    if not db_query("SELECT user_id FROM users WHERE user_id=?", (uid,), fetch=True):
+        db_query("INSERT INTO users VALUES (?,?,?,?,0,0)", (uid, name, user, str(datetime.datetime.now())), commit=True)
         return True
     return False
 
@@ -45,27 +54,31 @@ def gen_config():
 def scheduler():
     while True:
         now = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
-        active_draws = draws_col.find({"status": "active", "end_time": {"$lte": now}})
-        for d in active_draws:
-            did = d['id']
-            parts = list(parts_col.find({"draw_id": did}))
+        conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
+        c.execute("SELECT id, channel, title, message_id, winners_count FROM draws WHERE status='active' AND end_time <= ?", (now,))
+        for d in c.fetchall():
+            did, chan, title, mid, w_cnt = d
+            c.execute("SELECT user_id, first_name FROM participants WHERE draw_id=?", (did,))
+            parts = c.fetchall()
             if parts:
-                for w in random.sample(parts, min(d['winners_count'], len(parts))):
+                for w in random.sample(parts, min(w_cnt, len(parts))):
                     try: 
                         kb_app = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 دانلود برنامه NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="primary"))
-                        bot.send_message(w['user_id'], f"🎉 **تبریک {w['first_name']}!**\nشما برنده **{d['title']}** شدید.\n\n✅ **کانفیگ AWG شما:**\n\n```\n{gen_config()}\n```\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ.", reply_markup=kb_app, parse_mode='Markdown')
+                        bot.send_message(w[0], f"🎉 **تبریک {w[1]}!**\nشما برنده **{title}** شدید.\n\n✅ **کانفیگ AWG شما:**\n\n```\n{gen_config()}\n```\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ.", reply_markup=kb_app, parse_mode='Markdown')
+                        
                         consent_text = "از شما خواهش میکنیم از طریق دکمه زیر رضایت خود را از چالش اعلام کنید."
-                        kb_consent = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ اعلام رضایت", callback_data=f"consent_{did}_{w['user_id']}", style="primary"))
-                        bot.send_message(w['user_id'], consent_text, reply_markup=kb_consent, parse_mode='Markdown')
+                        kb_consent = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ اعلام رضایت", callback_data=f"consent_{did}_{w[0]}", style="primary"))
+                        bot.send_message(w[0], consent_text, reply_markup=kb_consent, parse_mode='Markdown')
                     except: pass
-                try: bot.send_message(d['channel'], f"🏆 **برندگان {d['title']}:**\n" + "\n".join([f"- {w['first_name']}" for w in random.sample(parts, min(d['winners_count'], len(parts)))]), reply_to_message_id=d['message_id'])
+                try: bot.send_message(chan, f"🏆 **برندگان {title}:**\n" + "\n".join([f"- {w[1]}" for w in random.sample(parts, min(w_cnt, len(parts)))]), reply_to_message_id=mid)
                 except: pass
             else:
-                try: bot.send_message(d['channel'], f"⚠️ **{d['title']}**\nهیچ‌کس شرکت نکرد!", reply_to_message_id=d['message_id'])
+                try: bot.send_message(chan, f"⚠️ **{title}**\nهیچ‌کس شرکت نکرد!", reply_to_message_id=mid)
                 except: pass
-            draws_col.update_one({"id": did}, {"$set": {"status": "finished"}})
-        time.sleep(15)
-        
+            c.execute("UPDATE draws SET status='finished' WHERE id=?", (did,))
+            conn.commit()
+        conn.close(); time.sleep(15)
+
 @bot.message_handler(commands=['start'])
 def start(m):
     uid, cid, name = m.from_user.id, m.chat.id, m.from_user.first_name
@@ -75,19 +88,22 @@ def start(m):
     args = m.text.split()
     if len(args) > 1 and args[1].startswith("draw_"):
         did = int(args[1].split("_")[1])
-        draw = draws_col.find_one({"id": did})
-        if draw and draw['status']=='active':
-            cnt = parts_col.count_documents({"draw_id": did})
-            if draw['max_parts'] > 0 and cnt >= draw['max_parts']: return bot.send_message(cid, "⚠️ ظرفیت پر شده!")
-            if not parts_col.find_one({"draw_id": did, "user_id": uid}):
-                parts_col.insert_one({"draw_id": did, "user_id": uid, "first_name": name})
+        conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
+        c.execute("SELECT channel, status, message_id, max_parts FROM draws WHERE id=?", (did,))
+        draw = c.fetchone()
+        if draw and draw[1]=='active':
+            c.execute("SELECT COUNT(*) FROM participants WHERE draw_id=?", (did,)); cnt = c.fetchone()[0]
+            if draw[3] > 0 and cnt >= draw[3]: conn.close(); return bot.send_message(cid, "⚠️ ظرفیت پر شده!")
+            c.execute("SELECT * FROM participants WHERE draw_id=? AND user_id=?", (did, uid))
+            if not c.fetchone():
+                c.execute("INSERT INTO participants VALUES (?,?,?)", (did, uid, name)); conn.commit()
                 m2 = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=f"https://t.me/{BOT_USERNAME}?start=draw_{did}", style="primary"), types.InlineKeyboardButton(f"{cnt+1} شرکت کننده 💫", callback_data="noop", style="primary"))
-                try: bot.edit_message_reply_markup(chat_id=draw['channel'], message_id=draw['message_id'], reply_markup=m2)
+                try: bot.edit_message_reply_markup(chat_id=draw[0], message_id=draw[2], reply_markup=m2)
                 except: pass
                 return bot.send_message(cid, "✅ با موفقیت شرکت کردی!")
             bot.send_message(cid, "⚠️ قبلاً شرکت کردی!")
         else: bot.send_message(cid, "❌ بسته شده.")
-        return
+        conn.close(); return
 
     if is_new and not is_admin(uid):
         nm = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🚫 بن", callback_data=f"ban_{uid}", style="danger"), types.InlineKeyboardButton("👑 ادمین", callback_data=f"adm_{uid}", style="success"))
@@ -111,10 +127,10 @@ def user_consent(call):
     _, did, uid = call.data.split("_")
     did, uid = int(did), int(uid)
     
-    user = users_col.find_one({"user_id": uid})
-    draw = draws_col.find_one({"id": did})
-    u_name = user['first_name'] if user else "ناشناس"
-    title = draw['title'] if draw else "قرعه‌کشی"
+    user = db_query("SELECT first_name FROM users WHERE user_id=?", (uid,), fetch=True)
+    draw = db_query("SELECT title, channel FROM draws WHERE id=?", (did,), fetch=True)
+    u_name = user[0] if user else "ناشناس"
+    title = draw[0] if draw else "قرعه‌کشی"
     
     admin_text = f"👤 **کاربر {u_name}** (ID: `{uid}`) رضایت خود را از چالش **{title}** اعلام کرد.\n\nآیا تایید می‌کنید؟"
     admin_kb = types.InlineKeyboardMarkup(row_width=2).add(
@@ -131,11 +147,11 @@ def admin_approve_consent(call):
     _, _, did, uid = call.data.split("_")
     did, uid = int(did), int(uid)
     
-    user = users_col.find_one({"user_id": uid})
-    draw = draws_col.find_one({"id": did})
-    u_name = user['first_name'] if user else "ناشناس"
-    title = draw['title'] if draw else "قرعه‌کشی"
-    channel = draw['channel'] if draw else ""
+    user = db_query("SELECT first_name FROM users WHERE user_id=?", (uid,), fetch=True)
+    draw = db_query("SELECT title, channel FROM draws WHERE id=?", (did,), fetch=True)
+    u_name = user[0] if user else "ناشناس"
+    title = draw[0] if draw else "قرعه‌کشی"
+    channel = draw[1] if draw else ""
     
     bot.edit_message_text(f"✅ رضایت کاربر {u_name} تایید شد و به کانال ارسال شد.", call.message.chat.id, call.message.message_id, reply_markup=None)
     try: bot.send_message(channel, f"🎊 **کاربر {u_name}** رسماً رضایت خود را از چالش **{title}** اعلام کرد. 🎉", parse_mode='Markdown')
@@ -151,12 +167,13 @@ def admin_reject_consent(call):
 
 @bot.message_handler(func=lambda m: m.text == "🔙 لغو")
 def cancel(m):
+    bot.answer_callback_query(m.id)
     user_data.pop(m.from_user.id, None); admin_state.pop(m.from_user.id, None)
     bot.send_message(m.chat.id, "✅ لغو شد."); start(m)
 
 @bot.message_handler(func=lambda m: m.text == "👑 پنل" and is_admin(m.chat.id))
 def admin_panel(m):
-    u = users_col.count_documents({}); cf = configs_col.count_documents({})
+    u = db_query("SELECT COUNT(*) FROM users", fetch=True)[0]; cf = db_query("SELECT COUNT(*) FROM configs", fetch=True)[0]
     lim, lk = get_setting('limit'), get_setting('bot_locked')
     text = f"👑 **آمار**\n👥 کاربران: {u}\n⚙️ کانفیگ‌ها: {cf}\n📊 محدودیت: {lim}\n🔒 وضعیت: {'🔴 قفل' if lk=='1' else '🟢 باز'}"
     kb = types.InlineKeyboardMarkup(row_width=1)
@@ -230,9 +247,8 @@ def wiz_win(c):
         return bot.register_next_step_handler(msg, wiz_win_m)
     admin_state[c.from_user.id]['winners'] = int(c.data.split("_")[1])
     bot.edit_message_text("✅ ثبت شد.", c.message.chat.id, c.message.message_id)
-    msg = bot.send_message(c.message.chat.id, "📢 **گام ۵/۵: کانال**\nآیدی کانال (مثلاً `@MyChannel`):")
-    bot.register_next_step_handler(msg, wiz_chan)
-
+    msg = bot.send_message(c.message.chat.id, "📢 **گام ۵/۵: کانال**\nآیدی
+    
 def wiz_win_m(m):
     if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ عدد بفرست!")
     admin_state[m.from_user.id]['winners'] = int(m.text)
@@ -242,50 +258,48 @@ def wiz_win_m(m):
 def wiz_chan(m):
     if not is_admin(m.from_user.id): return
     data = admin_state[m.from_user.id]; channel = m.text
+    conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
+    c.execute("INSERT INTO draws (channel, end_time, title, status, max_parts, winners_count) VALUES (?, ?, ?, 'active', ?, ?)", (channel, data['end_time'], data['title'], data['max_parts'], data['winners']))
+    did = c.lastrowid; conn.commit(); conn.close(); admin_state.pop(m.from_user.id, None)
     
-    new_draw = {
-        "id": int(time.time()), "channel": channel, "end_time": data['end_time'], 
-        "title": data['title'], "status": "active", "message_id": 0, 
-        "max_parts": data['max_parts'], "winners_count": data['winners']
-    }
-    draws_col.insert_one(new_draw)
-    did = new_draw['id']
-    
-    admin_state.pop(m.from_user.id, None)
     kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=f"https://t.me/{BOT_USERNAME}?start=draw_{did}", style="primary"), types.InlineKeyboardButton("0 شرکت کننده 💫", callback_data="noop", style="primary"))
     try:
         mid = bot.send_message(channel, f"🎉 **{data['title']}**\nبرای شرکت کلیک کن:", reply_markup=kb, parse_mode='Markdown').message_id
-        draws_col.update_one({"id": did}, {"$set": {"message_id": mid}})
+        db_query("UPDATE draws SET message_id=? WHERE id=?", (mid, did), commit=True)
+        
+        # متن به چند خط شکسته شده تا ارور سینتکس نده
         msg_text = (
             f"✅ **قرعه‌کشی ارسال شد!**\n\n"
             f"لینک اختصاصی:\n"
             f"https://t.me/{BOT_USERNAME}?start=draw_{did}"
         )
         bot.send_message(m.chat.id, msg_text, parse_mode='Markdown')
-    except Exception as e: bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
+    except Exception as e: 
+        bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
     start(m)
 
 @bot.callback_query_handler(func=lambda c: c.data == "list_users" and is_admin(c.from_user.id))
 def list_users(c):
     bot.answer_callback_query(c.id)
-    users = list(users_col.find().limit(20))
+    conn = sqlite3.connect('bot_data.db'); c = conn.cursor(); c.execute("SELECT user_id, first_name FROM users LIMIT 20")
+    users = c.fetchall(); conn.close()
     if not users: return bot.send_message(c.message.chat.id, "خالی است.")
-    kb = types.InlineKeyboardMarkup(row_width=2).add(*[types.InlineKeyboardButton(u['first_name'], callback_data=f"u_{u['user_id']}", style="primary") for u in users])
+    kb = types.InlineKeyboardMarkup(row_width=2).add(*[types.InlineKeyboardButton(u[1], callback_data=f"u_{u[0]}", style="primary") for u in users])
     bot.send_message(c.message.chat.id, "👥 **کاربران:**", reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("u_") and is_admin(c.from_user.id))
 def user_panel(c):
     bot.answer_callback_query(c.id); tid = int(c.data.split("_")[1])
-    u = users_col.find_one({"user_id": tid})
-    cnt = configs_col.count_documents({"user_id": tid})
+    u = db_query("SELECT first_name, is_admin, is_banned FROM users WHERE user_id=?", (tid,), fetch=True)
+    cnt = db_query("SELECT COUNT(*) FROM configs WHERE user_id=?", (tid,), fetch=True)[0]
     kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🚫 بن", callback_data=f"ban_{tid}", style="danger"), types.InlineKeyboardButton("👑 ادمین", callback_data=f"adm_{tid}", style="success"))
-    bot.edit_message_text(f"👤 **{u['first_name']}**\n🆔 `{tid}`\n⚙️ کانفیگ: {cnt}\n📊 {['🟢 فعال','🚫 مسدود'][u['is_banned']]} | {['👤 کاربر','👑 ادمین'][u['is_admin']]}", c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode='Markdown')
+    bot.edit_message_text(f"👤 **{u[0]}**\n🆔 `{tid}`\n⚙️ کانفیگ: {cnt}\n📊 {['🟢 فعال','🚫 مسدود'][u[2]]} | {['👤 کاربر','👑 ادمین'][u[1]]}", c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("ban_") or c.data.startswith("adm_"))
 def adm_action(c):
     if c.from_user.id != SUPER_ADMIN_ID: return bot.answer_callback_query(c.id, "فقط مدیر!")
     act, tid = c.data.split("_")[0], int(c.data.split("_")[1])
-    users_col.update_one({"user_id": tid}, {"$set": {"is_banned" if act=="ban" else "is_admin": 1}})
+    db_query(f"UPDATE users SET {'is_banned' if act=='ban' else 'is_admin'}=1 WHERE user_id=?", (tid,), commit=True)
     bot.answer_callback_query(c.id, "✅ انجام شد."); bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=None)
 
 @bot.callback_query_handler(func=lambda c: c.data == "toggle_lock" and is_admin(c.from_user.id))
@@ -306,12 +320,13 @@ def bc(m):
     bot.register_next_step_handler(msg, lambda m: (send_broadcast(m), start(m)))
 
 def send_broadcast(m):
-    users = users_col.find({"is_banned": 0})
+    conn = sqlite3.connect('bot_data.db'); c = conn.cursor(); c.execute("SELECT user_id FROM users WHERE is_banned=0")
+    users = c.fetchall(); conn.close()
     for u in users:
-        try: bot.send_message(u['user_id'], f"📢 **پیام همگانی:**\n\n{m.text}", parse_mode='Markdown')
+        try: bot.send_message(u[0], f"📢 **پیام همگانی:**\n\n{m.text}", parse_mode='Markdown')
         except: pass
     bot.send_message(m.chat.id, "✅ ارسال شد.")
-    
+
 @bot.message_handler(func=lambda m: m.text == "📚 آموزش اتصال")
 def tut(m):
     bot.send_message(m.chat.id, "📚 **آموزش:**\n1️⃣ NikaNG باز کن.\n2️⃣ + بزن.\n3️⃣ Import from Clipboard.\n4️⃣ کانفیگ پیست کن.", parse_mode='Markdown')
@@ -321,25 +336,25 @@ def cfg_start(m):
     uid = m.from_user.id
     if is_banned(uid): return
     if get_setting('bot_locked') == '1' and not is_admin(uid): return bot.send_message(uid, "⛔️ بسته است.")
-    if configs_col.count_documents({"user_id": uid}) >= int(get_setting('limit')): return bot.send_message(uid, "❌ محدودیت پر شد.")
+    if db_query("SELECT COUNT(*) FROM configs WHERE user_id=?", (uid,), fetch=True)[0] >= int(get_setting('limit')): return bot.send_message(uid, "❌ محدودیت پر شد.")
     user_data[uid] = {}
     kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger"))
     bot.send_message(uid, "اول NikaNG رو دانلود کن:", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_1")
 def cfg_name(c):
-    bot.answer_callback_query(c.id) 
+    bot.answer_callback_query(c.id)
     user_data[c.message.chat.id] = {}
     bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎲 خودکار", callback_data="c_rand", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")))
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
 def cfg_cancel(c):
-    bot.answer_callback_query(c.id) 
+    bot.answer_callback_query(c.id)
     user_data.pop(c.message.chat.id, None); bot.edit_message_text("لغو شد.", c.message.chat.id, c.message.message_id); start(c.message)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_rand")
 def cfg_rand(c):
-    bot.answer_callback_query(c.id) 
+    bot.answer_callback_query(c.id)
     n = random.choice(RANDOM_NAMES) + "-" + str(random.randint(10,99)); user_data[c.message.chat.id]['name'] = f"{n} (KiarashAi)"
     bot.edit_message_text(f"اسم: **{n} (KiarashAi)**", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
 
@@ -350,12 +365,12 @@ def cfg_get_name(m):
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_gen")
 def cfg_gen(c):
-    bot.answer_callback_query(c.id) 
+    bot.answer_callback_query(c.id)
     cid = c.message.chat.id
     if cid not in user_data: return
     bot.edit_message_text("⏳ در حال ساخت...", cid, c.message.message_id)
     cfg = gen_config()
-    configs_col.insert_one({"user_id": cid, "config_name": user_data[cid]['name'], "created_at": str(datetime.datetime.now())})
+    db_query("INSERT INTO configs (user_id, config_name, created_at) VALUES (?,?,?)", (cid, user_data[cid]['name'], str(datetime.datetime.now())), commit=True)
     
     txt = f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n⚠️ **هشدار:** بیش از ۴۰۰ گیگ مصرف نکن.\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ."
     bot.send_message(cid, txt, parse_mode='Markdown')
