@@ -258,9 +258,11 @@ def process_draw_end(message):
     conn.commit()
     conn.close()
     
-    del admin_state[message.from_user.id]
+        del admin_state[message.from_user.id]
     bot.send_message(message.chat.id, f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**\n\n📅 تاریخ: امروز\n⏰ از {data['start_hour']} تا {end_time}\n📢 کانال: {data['channel']}\n🎁 عنوان: {data['title']}\n\nربات در زمان مشخص شده، خودکار در کانال پیام می‌ذاره و برنده رو انتخاب می‌کنه.", reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
-    start(message)@bot.callback_query_handler(func=lambda call: call.data.startswith("join_"))
+    start(message)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("join_"))
 def join_draw(call):
     draw_id = int(call.data.split("_")[1])
     user_id = call.from_user.id
