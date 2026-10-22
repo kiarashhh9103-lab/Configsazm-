@@ -15,7 +15,6 @@ user_data, admin_state = {}, {}
 
 def init_db():
     conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
-    # اضافه شدن ستون config_limit به جدول کاربران
     c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, username TEXT, join_date TEXT, is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, config_limit INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, config_name TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
@@ -143,93 +142,74 @@ def admin_panel(m):
     kb.add(types.InlineKeyboardButton(lock_btn_text, callback_data="toggle_lock", style=lock_btn_style))
     bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode='Markdown')
 
-# ================= لیست کاربران و تنظیمات =================
 @bot.callback_query_handler(func=lambda c: c.data == "list_users" and is_admin(c.from_user.id))
 def list_users(c):
     bot.answer_callback_query(c.id)
     conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor()
-    # شرط user_id != SUPER_ADMIN_ID باعث میشه خودت توی لیست نیای
     c_db.execute("SELECT user_id, first_name FROM users WHERE user_id != ? LIMIT 20", (SUPER_ADMIN_ID,))
     users = c_db.fetchall(); conn.close()
-    
-    if not users: 
-        return bot.send_message(c.message.chat.id, "هیچ کاربری در لیست نیست.")
-        
+    if not users: return bot.send_message(c.message.chat.id, "هیچ کاربری در لیست نیست.")
     kb = types.InlineKeyboardMarkup(row_width=2).add(*[types.InlineKeyboardButton(u[1], callback_data=f"u_{u[0]}", style="primary") for u in users])
     bot.send_message(c.message.chat.id, "👥 **کاربران:**", reply_markup=kb, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("u_") and is_admin(c.from_user.id))
-def user_panel(c):
-    bot.answer_callback_query(c.id)
-    tid = int(c.data.split("_")[1])
+def show_user_panel(chat_id, message_id, tid):
     conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor()
     c_db.execute("SELECT first_name, is_admin, is_banned, config_limit FROM users WHERE user_id=?", (tid,))
     u = c_db.fetchone()
     c_db.execute("SELECT COUNT(*) FROM configs WHERE user_id=?", (tid,))
     cnt = c_db.fetchone()[0]
     conn.close()
-    
-    if not u: return bot.send_message(c.message.chat.id, "کاربر یافت نشد.")
-    
+    if not u: return
     name, is_adm, is_bn, u_limit = u
     status = "🚫 مسدود" if is_bn else "🟢 فعال"
     role = "👑 ادمین" if is_adm else "👤 کاربر"
-    
     limit_text = "محدودیت کلی ربات" if u_limit == 0 else (f"{u_limit} بار در روز" if u_limit > 0 else "نامحدود")
-    
     text = f"👤 **{name}**\n🆔 `{tid}`\n⚙️ کانفیگ‌ها: {cnt}\n📊 {status} | {role}\n📈 محدودیت: {limit_text}"
-    
     kb = types.InlineKeyboardMarkup(row_width=1)
-    # دکمه ادمین
     kb.add(types.InlineKeyboardButton("👤 حذف ادمین" if is_adm else "👑 تنظیم ادمین", callback_data=f"tgl_adm_{tid}", style="danger" if is_adm else "success"))
-    # دکمه بن
     kb.add(types.InlineKeyboardButton("✅ حذف بن" if is_bn else "🚫 مسدود کردن", callback_data=f"tgl_ban_{tid}", style="success" if is_bn else "danger"))
-    # دکمه تنظیم محدودیت
     kb.add(types.InlineKeyboardButton("⚙️ تعویض محدودیت", callback_data=f"u_lim_{tid}", style="primary"))
-    # دکمه بازگشت
     kb.add(types.InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_users", style="primary"))
-    
-    bot.edit_message_text(text, c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode='Markdown')
+    try: bot.edit_message_text(text, chat_id, message_id, reply_markup=kb, parse_mode='Markdown')
+    except: bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("u_") and is_admin(c.from_user.id))
+def user_panel(c):
+    bot.answer_callback_query(c.id)
+    tid = int(c.data.split("_")[1])
+    show_user_panel(c.message.chat.id, c.message.message_id, tid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("tgl_adm_") and is_admin(c.from_user.id))
 def toggle_adm(c):
-    bot.answer_callback_query(c.id, "تغییر کرد.")
+    bot.answer_callback_query(c.id)
     tid = int(c.data.split("_")[2])
     conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor()
     c_db.execute("SELECT is_admin FROM users WHERE user_id=?", (tid,))
-    curr = c_db.fetchone()[0]
-    new_val = 0 if curr == 1 else 1
+    new_val = 0 if c_db.fetchone()[0] == 1 else 1
     c_db.execute("UPDATE users SET is_admin=? WHERE user_id=?", (new_val, tid))
     conn.commit(); conn.close()
-    
-    try:
-        msg = "👑 شما به عنوان ادمین تنظیم شدید." if new_val == 1 else "👤 دسترسی ادمینی شما گرفته شد."
-        bot.send_message(tid, f"🔔 **نوتیف مدیریت:**\n{msg}")
+    try: bot.send_message(tid, "🔔 **نوتیف مدیریت:**\n👑 شما به عنوان ادمین تنظیم شدید." if new_val == 1 else "🔔 **نوتیف مدیریت:**\n👤 دسترسی ادمینی شما گرفته شد.")
     except: pass
-    user_panel(c) # رفرش پنل
+    show_user_panel(c.message.chat.id, c.message.message_id, tid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("tgl_ban_") and is_admin(c.from_user.id))
 def toggle_ban(c):
-    bot.answer_callback_query(c.id, "تغییر کرد.")
+    bot.answer_callback_query(c.id)
     tid = int(c.data.split("_")[2])
     conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor()
     c_db.execute("SELECT is_banned FROM users WHERE user_id=?", (tid,))
-    curr = c_db.fetchone()[0]
-    new_val = 0 if curr == 1 else 1
+    new_val = 0 if c_db.fetchone()[0] == 1 else 1
     c_db.execute("UPDATE users SET is_banned=? WHERE user_id=?", (new_val, tid))
     conn.commit(); conn.close()
-    
-    try:
-        msg = "⛔️ شما توسط مدیریت مسدود شدید." if new_val == 1 else "✅ شما از مسدودی خارج شدید."
-        bot.send_message(tid, f"🔔 **نوتیف مدیریت:**\n{msg}")
+    try: bot.send_message(tid, "🔔 **نوتیف مدیریت:**\n⛔️ شما مسدود شدید." if new_val == 1 else "🔔 **نوتیف مدیریت:**\n✅ شما از مسدودی خارج شدید.")
     except: pass
-    user_panel(c) # رفرش پنل
+    show_user_panel(c.message.chat.id, c.message.message_id, tid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("u_lim_") and is_admin(c.from_user.id))
 def ask_u_limit(c):
     bot.answer_callback_query(c.id)
     tid = int(c.data.split("_")[2])
-    admin_state[c.from_user.id] = {"action": "set_u_limit", "target": tid}
+    admin_state[c.from_user.id] = {"action": "set_u_limit", "target": tid, "msg_id": c.message.message_id}
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🔙 لغو")
     msg = bot.send_message(c.message.chat.id, "عدد محدودیت جدید را بفرست (0 = محدودیت کلی، -1 = نامحدود):", reply_markup=markup)
@@ -238,28 +218,20 @@ def ask_u_limit(c):
 def save_u_limit(m):
     if m.text == "🔙 لغو": return cancel(m)
     if not m.text.lstrip('-').isdigit(): return bot.send_message(m.chat.id, "❌ فقط عدد بفرست!")
-    
     data = admin_state.get(m.from_user.id)
     if not data or data.get("action") != "set_u_limit": return
-    
-    tid = data["target"]
+    tid, msg_id = data["target"], data["msg_id"]
     new_lim = int(m.text)
-    
     conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
     c.execute("UPDATE users SET config_limit=? WHERE user_id=?", (new_lim, tid))
     conn.commit(); conn.close()
-    
     lim_text = "محدودیت کلی ربات" if new_lim == 0 else (f"{new_lim} بار در روز" if new_lim > 0 else "نامحدود")
     bot.send_message(m.chat.id, f"✅ محدودیت کاربر روی **{lim_text}** تنظیم شد.", reply_markup=types.ReplyKeyboardRemove())
-    
     try: bot.send_message(tid, f"🔔 **نوتیف مدیریت:**\nمحدودیت ساخت کانفیگ شما به **{lim_text}** تغییر یافت.")
     except: pass
-    
     del admin_state[m.from_user.id]
-    # ساخت مجدد پنل برای رفرش
-    c = types.CallbackQuery(id="0", from_user=m.from_user, message=m, data=f"u_{tid}", json_string="")
-    user_panel(c)
-    
+    show_user_panel(m.chat.id, msg_id, tid)
+
 @bot.callback_query_handler(func=lambda c: c.data == "toggle_lock" and is_admin(c.from_user.id))
 def toggle_lock(c): 
     bot.answer_callback_query(c.id)
@@ -293,7 +265,7 @@ def send_broadcast(m):
         except: pass
     bot.send_message(m.chat.id, "✅ ارسال شد.", reply_markup=types.ReplyKeyboardRemove())
     start(m)
-
+    
 @bot.message_handler(func=lambda m: m.text == "📚 آموزش اتصال")
 def tut(m):
     bot.send_message(m.chat.id, "📚 **آموزش:**\n1️⃣ NikaNG باز کن.\n2️⃣ + بزن.\n3️⃣ Import from Clipboard.\n4️⃣ کانفیگ پیست کن.", parse_mode='Markdown')
@@ -317,23 +289,18 @@ def cfg_start(m):
 def cfg_name(c):
     bot.answer_callback_query(c.id)
     user_data[c.message.chat.id] = {}
-    bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎲 خودکار", callback_data="c_rand", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")))
+    # دکمه های شیشه ای حذف شدند
+    bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
 def cfg_cancel(c):
     bot.answer_callback_query(c.id)
     user_data.pop(c.message.chat.id, None); bot.edit_message_text("لغو شد.", c.message.chat.id, c.message.message_id); start(c.message)
 
-@bot.callback_query_handler(func=lambda c: c.data == "c_rand")
-def cfg_rand(c):
-    bot.answer_callback_query(c.id)
-    n = random.choice(RANDOM_NAMES) + "-" + str(random.randint(10,99)); user_data[c.message.chat.id]['name'] = f"{n} (KiarashAi)"
-    bot.edit_message_text(f"اسم: **{n} (KiarashAi)**", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
-
 @bot.message_handler(func=lambda m: m.chat.id in user_data and 'name' not in user_data[m.chat.id])
 def cfg_get_name(m):
     user_data[m.chat.id]['name'] = f"{m.text} (KiarashAi)"
-    bot.send_message(m.chat.id, f"اسم: **{m.text} (KiarashAi)**", reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
+    bot.send_message(m.chat.id, f"اسم شد: **{m.text} (KiarashAi)**", reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_gen")
 def cfg_gen(c):
@@ -344,7 +311,6 @@ def cfg_gen(c):
     cfg = gen_config()
     db_query("INSERT INTO configs (user_id, config_name, created_at) VALUES (?,?,?)", (cid, user_data[cid]['name'], str(datetime.datetime.now())), commit=True)
     
-    # متن جدید با جمله گیمینگ
     txt = (
         f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n"
         f"📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n"
@@ -444,7 +410,6 @@ def wiz_chan(m):
     except Exception as e: bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
     start(m)
 
-# ================= وب‌سرور برای Render =================
 app = Flask(__name__)
 @app.route('/')
 def index(): return "Bot is running!"
