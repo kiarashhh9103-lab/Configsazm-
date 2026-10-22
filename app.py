@@ -3,7 +3,7 @@ from flask import Flask
 from telebot import types
 
 # خواندن توکن از Environment رندر
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Kiapanelbot" # آیدی جدید رباتت رو بذار
 
