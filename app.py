@@ -2,7 +2,7 @@ import os, threading, telebot, sqlite3, random, datetime, time, json, base64, ur
 from flask import Flask
 from telebot import types
 
-BOT_TOKEN = "8735994962:AAHEoAYN3RpZKLviwmhrU3ljgDZLZaHzv4Y"
+BOT_TOKEN = "8735994962:AAE5FXvEcmzIvwZeYDGmZ5shFIMrdpXBm3I"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Configsakiabot"
 
@@ -12,6 +12,7 @@ JUNK_I1 = "<b 0xc10000000114367096bb0fb3f58f3a3fb8aaacd61d63a1c8a40e14f7374b8a62
 
 bot = telebot.TeleBot(BOT_TOKEN)
 user_data, admin_state = {}, {}
+bot.remove_webhook() # این خط وب‌هوک رو کاملاً پاک میکنه
 
 def db_query(query, args=(), fetch=False, commit=False):
     conn = sqlite3.connect('bot_data.db'); c = conn.cursor(); c.execute(query, args)
