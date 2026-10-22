@@ -2,7 +2,7 @@ import os, threading, telebot, sqlite3, random, datetime, time, json, base64, ur
 from flask import Flask
 from telebot import types
 
-BOT_TOKEN = "8735994962:AAE5FXvEcmzIvwZeYDGmZ5shFIMrdpXBm3I"
+BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Configsakiabot"
 
@@ -12,7 +12,6 @@ JUNK_I1 = "<b 0xc10000000114367096bb0fb3f58f3a3fb8aaacd61d63a1c8a40e14f7374b8a62
 
 bot = telebot.TeleBot(BOT_TOKEN)
 user_data, admin_state = {}, {}
-bot.remove_webhook() # این خط وب‌هوک رو کاملاً پاک میکنه
 
 def db_query(query, args=(), fetch=False, commit=False):
     conn = sqlite3.connect('bot_data.db'); c = conn.cursor(); c.execute(query, args)
@@ -62,15 +61,11 @@ def scheduler():
             if parts:
                 for w in random.sample(parts, min(w_cnt, len(parts))):
                     try: 
-                        # دکمه دانلود فقط برای برنده
-                        kb_app = types.InlineKeyboardMarkup()
-                        kb_app.add(types.InlineKeyboardButton("📥 دانلود برنامه NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="primary"))
-                        
+                        kb_app = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 دانلود برنامه NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="primary"))
                         bot.send_message(w[0], f"🎉 **تبریک {w[1]}!**\nشما برنده **{title}** شدید.\n\n✅ **کانفیگ AWG شما:**\n\n```\n{gen_config()}\n```\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ.", reply_markup=kb_app, parse_mode='Markdown')
                         
                         consent_text = "از شما خواهش میکنیم از طریق دکمه زیر رضایت خود را از چالش اعلام کنید."
-                        kb_consent = types.InlineKeyboardMarkup()
-                        kb_consent.add(types.InlineKeyboardButton("✅ اعلام رضایت", callback_data=f"consent_{did}_{w[0]}", style="primary"))
+                        kb_consent = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ اعلام رضایت", callback_data=f"consent_{did}_{w[0]}", style="primary"))
                         bot.send_message(w[0], consent_text, reply_markup=kb_consent, parse_mode='Markdown')
                     except: pass
                 try: bot.send_message(chan, f"🏆 **برندگان {title}:**\n" + "\n".join([f"- {w[1]}" for w in random.sample(parts, min(w_cnt, len(parts)))]), reply_to_message_id=mid)
@@ -136,8 +131,7 @@ def user_consent(call):
     title = draw[0] if draw else "قرعه‌کشی"
     
     admin_text = f"👤 **کاربر {u_name}** (ID: `{uid}`) رضایت خود را از چالش **{title}** اعلام کرد.\n\nآیا تایید می‌کنید؟"
-    admin_kb = types.InlineKeyboardMarkup(row_width=2)
-    admin_kb.add(
+    admin_kb = types.InlineKeyboardMarkup(row_width=2).add(
         types.InlineKeyboardButton("✅ تایید", callback_data=f"app_c_{did}_{uid}", style="success"),
         types.InlineKeyboardButton("❌ رد", callback_data=f"rej_c_{uid}", style="danger")
     )
@@ -158,9 +152,7 @@ def admin_approve_consent(call):
     channel = draw[1] if draw else ""
     
     bot.edit_message_text(f"✅ رضایت کاربر {u_name} تایید شد و به کانال ارسال شد.", call.message.chat.id, call.message.message_id, reply_markup=None)
-    
-    try:
-        bot.send_message(channel, f"🎊 **کاربر {u_name}** رسماً رضایت خود را از چالش **{title}** اعلام کرد. 🎉", parse_mode='Markdown')
+    try: bot.send_message(channel, f"🎊 **کاربر {u_name}** رسماً رضایت خود را از چالش **{title}** اعلام کرد. 🎉", parse_mode='Markdown')
     except: pass
     try: bot.send_message(uid, "✅ رضایت شما توسط مدیریت تایید شد.")
     except: pass
@@ -202,10 +194,7 @@ def wiz_cancel(c):
 def wiz_title(m):
     if not is_admin(m.from_user.id): return
     admin_state[m.from_user.id]['title'] = m.text
-    kb = types.InlineKeyboardMarkup(row_width=3).add(
-        *[types.InlineKeyboardButton(f"⏱ {t}", callback_data=f"d_{v}", style="primary") for t,v in [("۵ د",5),("۱۰ د",10),("۳۰ د",30),("۱ س",60),("۲ س",120),("۲۴ س",1440)]],
-        types.InlineKeyboardButton("✅ دستی", callback_data="m_dur", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=3).add(*[types.InlineKeyboardButton(f"⏱ {t}", callback_data=f"d_{v}", style="primary") for t,v in [("۵ د",5),("۱۰ د",10),("۳۰ د",30),("۱ س",60),("۲ س",120),("۲۴ س",1440)]], types.InlineKeyboardButton("✅ دستی", callback_data="m_dur", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger"))
     bot.send_message(m.chat.id, "⏳ **گام ۲/۵: مدت زمان**", reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: (c.data.startswith("d_") or c.data=="m_dur") and is_admin(c.from_user.id))
@@ -217,20 +206,14 @@ def wiz_dur(c):
     mins = int(c.data.split("_")[1])
     admin_state[c.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30+mins)).strftime("%Y-%m-%d %H:%M:%S")
     bot.edit_message_text(f"✅ زمان: {mins} دقیقه", c.message.chat.id, c.message.message_id)
-    kb = types.InlineKeyboardMarkup(row_width=3).add(
-        *[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]],
-        types.InlineKeyboardButton("♾ نامحدود", callback_data="c_0", style="success"), types.InlineKeyboardButton("✅ دستی", callback_data="m_cap", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=3).add(*[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]], types.InlineKeyboardButton("♾ نامحدود", callback_data="c_0", style="success"), types.InlineKeyboardButton("✅ دستی", callback_data="m_cap", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger"))
     bot.send_message(c.message.chat.id, "🚀 **گام ۳/۵: ظرفیت**", reply_markup=kb, parse_mode='Markdown')
 
 def wiz_dur_m(m):
     if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ عدد بفرست!")
     admin_state[m.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30+int(m.text))).strftime("%Y-%m-%d %H:%M:%S")
     bot.send_message(m.chat.id, f"✅ زمان: {m.text} دقیقه")
-    kb = types.InlineKeyboardMarkup(row_width=3).add(
-        *[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]],
-        types.InlineKeyboardButton("♾ نامحدود", callback_data="c_0", style="success"), types.InlineKeyboardButton("✅ دستی", callback_data="m_cap", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=3).add(*[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]], types.InlineKeyboardButton("♾ نامحدود", callback_data="c_0", style="success"), types.InlineKeyboardButton("✅ دستی", callback_data="m_cap", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger"))
     bot.send_message(m.chat.id, "🚀 **گام ۳/۵: ظرفیت**", reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: (c.data.startswith("c_") or c.data=="m_cap") and is_admin(c.from_user.id))
@@ -241,20 +224,14 @@ def wiz_cap(c):
         return bot.register_next_step_handler(msg, wiz_cap_m)
     admin_state[c.from_user.id]['max_parts'] = int(c.data.split("_")[1])
     bot.edit_message_text("✅ ظرفیت ثبت شد.", c.message.chat.id, c.message.message_id)
-    kb = types.InlineKeyboardMarkup(row_width=3).add(
-        *[types.InlineKeyboardButton(f"🏆 {v} برنده", callback_data=f"w_{v}", style="primary") for v in [1,2,3,5,10]],
-        types.InlineKeyboardButton("✅ دستی", callback_data="m_win", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=3).add(*[types.InlineKeyboardButton(f"🏆 {v} برنده", callback_data=f"w_{v}", style="primary") for v in [1,2,3,5,10]], types.InlineKeyboardButton("✅ دستی", callback_data="m_win", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger"))
     bot.send_message(c.message.chat.id, "🎁 **گام ۴/۵: تعداد برنده**", reply_markup=kb, parse_mode='Markdown')
 
 def wiz_cap_m(m):
     if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ عدد بفرست!")
     admin_state[m.from_user.id]['max_parts'] = int(m.text)
     bot.send_message(m.chat.id, "✅ ظرفیت ثبت شد.")
-    kb = types.InlineKeyboardMarkup(row_width=3).add(
-        *[types.InlineKeyboardButton(f"🏆 {v} برنده", callback_data=f"w_{v}", style="primary") for v in [1,2,3,5,10]],
-        types.InlineKeyboardButton("✅ دستی", callback_data="m_win", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup(row_width=3).add(*[types.InlineKeyboardButton(f"🏆 {v} برنده", callback_data=f"w_{v}", style="primary") for v in [1,2,3,5,10]], types.InlineKeyboardButton("✅ دستی", callback_data="m_win", style="success"), types.InlineKeyboardButton("❌ لغو", callback_data="c_draw", style="danger"))
     bot.send_message(m.chat.id, "🎁 **گام ۴/۵: تعداد برنده**", reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: (c.data.startswith("w_") or c.data=="m_win") and is_admin(c.from_user.id))
@@ -367,7 +344,6 @@ def cfg_gen(c):
     cfg = gen_config()
     db_query("INSERT INTO configs (user_id, config_name, created_at) VALUES (?,?,?)", (cid, user_data[cid]['name'], str(datetime.datetime.now())), commit=True)
     
-    # کاربر عادی فقط متن کانفیگ رو میگیره (بدون دکمه)
     txt = f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n⚠️ **هشدار:** بیش از ۴۰۰ گیگ مصرف نکن.\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ."
     bot.send_message(cid, txt, parse_mode='Markdown')
     
@@ -380,7 +356,11 @@ def index(): return "Bot is running!"
 @app.route('/health')
 def health(): return "OK"
 
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
-    threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    threading.Thread(target=run_flask, daemon=True).start()
+    bot.remove_webhook()
+    bot.infinity_polling()
