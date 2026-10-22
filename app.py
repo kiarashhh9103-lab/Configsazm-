@@ -158,7 +158,7 @@ def wiz_dur(c):
         msg = bot.send_message(c.message.chat.id, "⏳ دقیقه را وارد کن (مثلاً `45`):")
         return bot.register_next_step_handler(msg, wiz_dur_m)
     mins = int(c.data.split("_")[1])
-    admin_state[c.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30, minutes=mins)).strftime("%Y-%m-%d %H:%M:%S")
+    admin_state[c.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30+mins)).strftime("%Y-%m-%d %H:%M:%S")
     bot.edit_message_text(f"✅ زمان: {mins} دقیقه", c.message.chat.id, c.message.message_id)
     kb = types.InlineKeyboardMarkup(row_width=3).add(
         *[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]],
