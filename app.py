@@ -5,7 +5,7 @@ from telebot import types
 # خواندن توکن از Environment رندر
 BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
 SUPER_ADMIN_ID = 8639658675
-BOT_USERNAME = "Kiapanelbot" # آیدی جدید رباتت رو بذار
+BOT_USERNAME = "Kiawirebot"# آیدی جدید رباتت رو بذار
 
 CLEAN_IPS = ["8.34.70.64:2408", "8.6.112.224:2408", "188.114.98.12:2408", "8.34.70.120:2408", "8.35.211.2:2408", "188.114.96.70:2408", "188.114.99.75:2408", "8.39.214.218:2408", "188.114.99.6:2408", "8.34.70.169:2408"]
 RANDOM_NAMES = ["Ghost", "Ninja", "Warp", "Pro", "Shadow", "Turbo", "VIP", "Smart", "Ultra", "Fast"]
