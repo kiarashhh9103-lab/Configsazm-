@@ -258,8 +258,16 @@ def process_draw_end(message):
     conn.commit()
     conn.close()
     
-            del admin_state[message.from_user.id]
-    bot.send_message(message.chat.id, f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**", reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
+    del admin_state[message.from_user.id]
+    msg_text = (
+        f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**\n\n"
+        f"📅 تاریخ: امروز\n"
+        f"⏰ از {data['start_hour']} تا {end_time}\n"
+        f"📢 کانال: {data['channel']}\n"
+        f"🎁 عنوان: {data['title']}\n\n"
+        f"ربات در زمان مشخص شده، خودکار پیام می‌ذاره و برنده رو انتخاب می‌کنه."
+    )
+    bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
     start(message)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("join_"))
@@ -297,4 +305,3 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_bot).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    
