@@ -2,7 +2,7 @@ import os, threading, telebot, sqlite3, random, datetime, time, json, base64, ur
 from flask import Flask
 from telebot import types
 
-BOT_TOKEN = "8735994962:AAEi18nUH4-AUsUI6Kmt0ZWwfuuB6r7WtgE"
+BOT_TOKEN = "8735994962:AAHEoAYN3RpZKLviwmhrU3ljgDZLZaHzv4Y"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Configsakiabot"
 
