@@ -147,9 +147,14 @@ def admin_panel(m):
 @bot.callback_query_handler(func=lambda c: c.data == "list_users" and is_admin(c.from_user.id))
 def list_users(c):
     bot.answer_callback_query(c.id)
-    conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor(); c_db.execute("SELECT user_id, first_name FROM users LIMIT 20")
+    conn = sqlite3.connect('bot_data.db'); c_db = conn.cursor()
+    # شرط user_id != SUPER_ADMIN_ID باعث میشه خودت توی لیست نیای
+    c_db.execute("SELECT user_id, first_name FROM users WHERE user_id != ? LIMIT 20", (SUPER_ADMIN_ID,))
     users = c_db.fetchall(); conn.close()
-    if not users: return bot.send_message(c.message.chat.id, "خالی است.")
+    
+    if not users: 
+        return bot.send_message(c.message.chat.id, "هیچ کاربری در لیست نیست.")
+        
     kb = types.InlineKeyboardMarkup(row_width=2).add(*[types.InlineKeyboardButton(u[1], callback_data=f"u_{u[0]}", style="primary") for u in users])
     bot.send_message(c.message.chat.id, "👥 **کاربران:**", reply_markup=kb, parse_mode='Markdown')
 
@@ -339,7 +344,13 @@ def cfg_gen(c):
     cfg = gen_config()
     db_query("INSERT INTO configs (user_id, config_name, created_at) VALUES (?,?,?)", (cid, user_data[cid]['name'], str(datetime.datetime.now())), commit=True)
     
-    txt = f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n⚠️ **هشدار:** بیش از ۴۰۰ گیگ مصرف نکن.\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ."
+    # متن جدید با جمله گیمینگ
+    txt = (
+        f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n"
+        f"📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n"
+        f"⚠️ **هشدار:** بیش از ۴۰۰ گیگ مصرف نکن.\n\n"
+        f"🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ (پینگ ۷۰ تا ۸۵ میده ولی ریجسترش بد نیست)."
+    )
     bot.send_message(cid, txt, parse_mode='Markdown')
     
     bot.send_message(SUPER_ADMIN_ID, f"🔔 **کانفیگ جدید!**\n👤 {c.message.chat.first_name}\n🆔 `{cid}`", parse_mode='Markdown')
