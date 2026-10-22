@@ -1,5 +1,5 @@
 import os, threading, telebot, sqlite3, random, datetime, time, json, base64, urllib.request
-from flask import Flask
+from flask import Flask, request
 from telebot import types
 
 BOT_TOKEN = "8906649902:AAGyFoPVl4w1sJANsiBRPP-48DtEAoSAOmI"
@@ -489,8 +489,37 @@ def health(): return "OK"
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
+app = Flask(__name__)
+
+@app.route('/')
+def index(): return "Bot is running!"
+
+@app.route('/health')
+def health(): return "OK"
+
+# این مسیر برای دریافت پیام‌های تلگرام (Webhook) اضافه شده
+@app.route('/' + BOT_TOKEN, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Invalid content-type', 403
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 if __name__ == "__main__":
+    # تنظیم Webhook برای جلوگیری از خطای 409 در Render
+    bot.remove_webhook()
+    time.sleep(1)
+    render_url = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    if render_url:
+        webhook_url = f"https://{render_url}/{BOT_TOKEN}"
+        bot.set_webhook(url=webhook_url)
+    
+    # اجرای زمان‌بند و وب‌سرور
     threading.Thread(target=scheduler, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
-    bot.remove_webhook()
-    bot.infinity_polling()
