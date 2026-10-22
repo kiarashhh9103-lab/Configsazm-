@@ -11,7 +11,10 @@ import json
 import base64
 import urllib.request
 
-BOT_TOKEN = "8735994962:AAGVyIT8iXo88OhRezbAhwhZX5j_01wYnik"
+# ==========================================
+# ⚠️ توکن رباتت رو اینجا بین دوتا کوتیشن بذار
+# ==========================================
+BOT_TOKEN = "8735994962:AAEqIvHJz28coYZ0asXITCNKwU4tbih0idM"
 SUPER_ADMIN_ID = 8639658675
 
 CLEAN_IPS = ["8.34.70.64:2408", "8.6.112.224:2408", "188.114.98.12:2408", "8.34.70.120:2408", "8.35.211.2:2408", "188.114.96.70:2408", "188.114.99.75:2408", "8.39.214.218:2408", "188.114.99.6:2408", "8.34.70.169:2408"]
@@ -35,7 +38,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, username TEXT, join_date TEXT, is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, config_name TEXT, size TEXT, time TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
-    # حذف روز هفته از جدول قرعه کشی و اضافه شدن وضعیت ذخیره کانال
     c.execute('''CREATE TABLE IF NOT EXISTS draws 
                  (id INTEGER PRIMARY KEY, channel TEXT, start_hour TEXT, end_hour TEXT, title TEXT, status TEXT, message_id INTEGER, date TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS participants (draw_id INTEGER, user_id INTEGER, first_name TEXT)''')
@@ -141,167 +143,54 @@ Endpoint = {selected_ip}
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25"""
 
-# 🕒 سیستم زمان‌بندی قرعه کشی
 def draw_scheduler():
     while True:
         try:
-            now = datetime.datetime.now()
+            now = datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30) # تنظیم دقیق ساعت ایران
             current_time = now.strftime("%H:%M")
             today_date = now.strftime("%Y-%m-%d")
             
             conn = sqlite3.connect('bot_data.db')
             c = conn.cursor()
             
-            # 1. شروع قرعه کشی
+            # شروع
             c.execute("SELECT id, channel, title FROM draws WHERE status = 'pending' AND start_hour = ? AND date = ?", (current_time, today_date))
-            start_draws = c.fetchall()
-            for draw in start_draws:
+            for draw in c.fetchall():
                 draw_id, channel, title = draw
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", callback_data=f"join_{draw_id}", style="primary"))
                 try:
-                    msg = bot.send_message(channel, f"🎉 **{title}**\n\nبرای شرکت در قرعه کشی روی دکمه زیر کلیک کنید:", reply_markup=markup, parse_mode='Markdown')
+                    msg = bot.send_message(channel, f"🎉 **{title}**\n\nبرای شرکت روی دکمه زیر کلیک کنید:", reply_markup=markup, parse_mode='Markdown')
                     c.execute("UPDATE draws SET status = 'active', message_id = ? WHERE id = ?", (msg.message_id, draw_id))
                     conn.commit()
-                except Exception as e:
-                    print(f"Error sending to channel: {e}")
+                except Exception: pass
 
-            # 2. پایان قرعه کشی
+            # پایان
             c.execute("SELECT id, channel, title, message_id FROM draws WHERE status = 'active' AND end_hour = ? AND date = ?", (current_time, today_date))
-            end_draws = c.fetchall()
-            for draw in end_draws:
+            for draw in c.fetchall():
                 draw_id, channel, title, msg_id = draw
                 c.execute("SELECT user_id, first_name FROM participants WHERE draw_id = ?", (draw_id,))
                 parts = c.fetchall()
-                
                 if not parts:
-                    bot.send_message(channel, f"⚠️ **{title}**\n\nمتاسفانه هیچ‌کس در این قرعه‌کشی شرکت نکرد!", reply_to_message_id=msg_id)
+                    bot.send_message(channel, f"⚠️ **{title}**\n\nهیچ‌کس شرکت نکرد!", reply_to_message_id=msg_id)
                 else:
-                    winner = random.choice(parts)
-                    winner_id, winner_name = winner
-                    private_key, public_key = generate_warp_keys()
-                    config_text = generate_config_text(private_key, public_key)
+                    winner_id, winner_name = random.choice(parts)
+                    pk, pub = generate_warp_keys()
+                    cfg = generate_config_text(pk, pub)
                     winner_text = (
                         f"🎉 **تبریک {winner_name}!**\n\n"
-                        f"شما برنده قرعه‌کشی **{title}** شدید. 🥇\n\n"
-                        f"✅ **کانفیگ AWG شما:**\n\n```\n{config_text}\n```\n\n"
-                        f"📚 **آموزش:** متن بالا رو کپی کن، توی NikaNG گزینه Import from Clipboard رو بزن.\n\n"
+                        f"شما برنده **{title}** شدید. 🥇\n\n"
+                        f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n\n"
+                        f"📚 **آموزش:** توی NikaNG گزینه Import from Clipboard رو بزن.\n\n"
                         f"⚠️ **هشدار:** بیش از ۴۰۰ گیگ در ماه مصرف نکنید."
                     )
                     try:
                         bot.send_message(winner_id, winner_text, parse_mode='Markdown')
-                        bot.send_message(channel, f"🏆 **برنده قرعه‌کشی {title}:**\n\n{winner_name}\n\n(کانفیگ به دایرکت ایشون ارسال شد)", reply_to_message_id=msg_id)
-                    except Exception as e:
-                        bot.send_message(channel, f"⚠️ برنده انتخاب شد ({winner_name}) اما چون ربات رو استارت نکرده بود، نتونستم کانفیگ رو بفرستم.", reply_to_message_id=msg_id)
-
+                        bot.send_message(channel, f"🏆 **برنده:** {winner_name}\n\n(کانفیگ به دایرکت فرستاده شد)", reply_to_message_id=msg_id)
+                    except Exception:
+                        bot.send_message(channel, f"⚠️ برنده ({winner_name}) انتخاب شد اما ربات را استارت نکرده بود.", reply_to_message_id=msg_id)
                 c.execute("UPDATE draws SET status = 'finished' WHERE id = ?", (draw_id,))
                 conn.commit()
             conn.close()
-        except Exception as e:
-            print(f"Scheduler error: {e}")
-        
-        time.sleep(30) # هر ۳۰ ثانیه چک میکنه که دقیق باشه
-# ================= تنظیمات قرعه کشی =================
-@bot.callback_query_handler(func=lambda call: call.data == "setup_draw" and is_admin(call.from_user.id))
-def start_draw_setup(call):
-    bot.answer_callback_query(call.id)
-    saved_channel = get_setting('saved_channel')
-    
-    if saved_channel:
-        admin_state[call.from_user.id] = {"channel": saved_channel}
-        admin_state[call.from_user.id]['state'] = "waiting_draw_title"
-        msg = bot.send_message(call.message.chat.id, f"۵️⃣ **عنوان قرعه‌کشی** را وارد کنید (مثلاً: `قرعه‌کشی کانفیگ رایگان`):")
-        bot.register_next_step_handler(msg, process_draw_title)
-    else:
-        admin_state[call.from_user.id] = {}
-        admin_state[call.from_user.id]['state'] = "waiting_draw_channel"
-        msg = bot.send_message(call.message.chat.id, "۱️⃣ **آیدی کانال** خود را وارد کنید (مثلاً `@MyChannel`).\n\n⚠️ ربات باید ادمین کانال باشد!", parse_mode='Markdown')
-        bot.register_next_step_handler(msg, process_draw_channel)
-
-def process_draw_channel(message):
-    if not is_admin(message.from_user.id): return
-    channel = message.text
-    set_setting('saved_channel', channel)
-    admin_state[message.from_user.id] = {"channel": channel}
-    admin_state[message.from_user.id]['state'] = "waiting_draw_title"
-    msg = bot.send_message(message.chat.id, "۵️⃣ **عنوان قرعه‌کشی** را وارد کنید (مثلاً: `قرعه‌کشی کانفیگ رایگان`):")
-    bot.register_next_step_handler(msg, process_draw_title)
-
-def process_draw_title(message):
-    if not is_admin(message.from_user.id): return
-    title = message.text
-    admin_state[message.from_user.id]['title'] = title
-    admin_state[message.from_user.id]['state'] = "waiting_draw_start"
-    msg = bot.send_message(message.chat.id, "۳️⃣ **ساعت شروع** قرعه‌کشی را وارد کنید (مثلاً `14:00`):")
-    bot.register_next_step_handler(msg, process_draw_start)
-
-def process_draw_start(message):
-    if not is_admin(message.from_user.id): return
-    start_time = message.text
-    admin_state[message.from_user.id]['start_hour'] = start_time
-    admin_state[message.from_user.id]['state'] = "waiting_draw_end"
-    msg = bot.send_message(message.chat.id, "۴️⃣ **ساعت پایان** قرعه‌کشی را وارد کنید (مثلاً `18:00`):")
-    bot.register_next_step_handler(msg, process_draw_end)
-
-def process_draw_end(message):
-    if not is_admin(message.from_user.id): return
-    end_time = message.text
-    data = admin_state[message.from_user.id]
-    
-    conn = sqlite3.connect('bot_data.db')
-    c = conn.cursor()
-    today_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    
-    # ذخیره در دیتابیس با تاریخ امروز
-    c.execute("INSERT INTO draws (channel, start_hour, end_hour, title, status, date) VALUES (?, ?, ?, ?, 'pending', ?)",
-              (data['channel'], data['start_hour'], end_time, data['title'], today_date))
-    conn.commit()
-    conn.close()
-    
-    del admin_state[message.from_user.id]
-    msg_text = (
-        f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**\n\n"
-        f"📅 تاریخ: امروز\n"
-        f"⏰ از {data['start_hour']} تا {end_time}\n"
-        f"📢 کانال: {data['channel']}\n"
-        f"🎁 عنوان: {data['title']}\n\n"
-        f"ربات در زمان مشخص شده، خودکار پیام می‌ذاره و برنده رو انتخاب می‌کنه."
-    )
-    bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
-    start(message)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("join_"))
-def join_draw(call):
-    draw_id = int(call.data.split("_")[1])
-    user_id = call.from_user.id
-    first_name = call.from_user.first_name
-    
-    conn = sqlite3.connect('bot_data.db')
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM participants WHERE draw_id = ? AND user_id = ?", (draw_id, user_id))
-    if c.fetchone():
-        bot.answer_callback_query(call.id, "شما قبلاً در این قرعه‌کشی شرکت کرده‌اید!", show_alert=True)
-        conn.close()
-        return
-        
-    c.execute("INSERT INTO participants (draw_id, user_id, first_name) VALUES (?, ?, ?)", (draw_id, user_id, first_name))
-    conn.commit()
-    conn.close()
-    
-    bot.answer_callback_query(call.id, "✅ با موفقیت در قرعه‌کشی شرکت کردید!", show_alert=True)
-
-app = Flask(__name__)
-@app.route('/')
-def index(): return "Bot is running!"
-@app.route('/health')
-def health(): return "OK"
-
-def run_bot():
-    print("ربات روشن شد...")
-    threading.Thread(target=draw_scheduler, daemon=True).start()
-    bot.infinity_polling()
-
-if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+        except Exception: pass
+        time.sleep(30)
