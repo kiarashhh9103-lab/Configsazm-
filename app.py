@@ -258,8 +258,8 @@ def process_draw_end(message):
     conn.commit()
     conn.close()
     
-        del admin_state[message.from_user.id]
-    bot.send_message(message.chat.id, f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**\n\n📅 تاریخ: امروز\n⏰ از {data['start_hour']} تا {end_time}\n📢 کانال: {data['channel']}\n🎁 عنوان: {data['title']}\n\nربات در زمان مشخص شده، خودکار در کانال پیام می‌ذاره و برنده رو انتخاب می‌کنه.", reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
+            del admin_state[message.from_user.id]
+    bot.send_message(message.chat.id, f"✅ **قرعه‌کشی با موفقیت تنظیم شد!**", reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
     start(message)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("join_"))
@@ -282,4 +282,19 @@ def join_draw(call):
     conn.close()
     
     bot.answer_callback_query(call.id, "✅ با موفقیت در قرعه‌کشی شرکت کردید!", show_alert=True)
+
+app = Flask(__name__)
+@app.route('/')
+def index(): return "Bot is running!"
+@app.route('/health')
+def health(): return "OK"
+
+def run_bot():
+    print("ربات روشن شد...")
+    threading.Thread(target=draw_scheduler, daemon=True).start()
+    bot.infinity_polling()
+
+if __name__ == "__main__":
+    threading.Thread(target=run_bot).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
     
