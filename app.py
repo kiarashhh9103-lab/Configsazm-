@@ -258,4 +258,12 @@ def wiz_chan(m):
     try:
         mid = bot.send_message(channel, f"🎉 **{data['title']}**\nبرای شرکت کلیک کن:", reply_markup=kb, parse_mode='Markdown').message_id
         draws_col.update_one({"id": did}, {"$set": {"message_id": mid}})
-        bot.send_message(m.chat.id, f"✅ **قرعه‌کشی ارسال شد!**\nلینک: `https://t.me/{BOT_USERNAME}?start=draw_{did}`", parse_mode='Ma
+            msg_text = (
+        f"✅ **قرعه‌کشی ارسال شد!**\n\n"
+        f"لینک اختصاصی:\n"
+        f"https://t.me/{BOT_USERNAME}?start=draw_{did}"
+    )
+    bot.send_message(m.chat.id, msg_text, parse_mode='Markdown')
+except Exception as e:
+    bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
+start(m)
