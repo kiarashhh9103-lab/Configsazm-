@@ -2,7 +2,7 @@ import os, threading, telebot, random, datetime, time, json, base64, urllib.requ
 from flask import Flask
 from telebot import types
 
-# 🔴 توکن و لینک دیتابیس مستقیم توی کد قرار گرفتند
+# ⚠️ توکن و لینک دیتابیس اینجاست
 BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
 MONGO_URI = "mongodb+srv://KiarashAi:KiarashAi@cluster0.xl9mcbq.mongodb.net/"
 SUPER_ADMIN_ID = 8639658675
@@ -15,7 +15,6 @@ JUNK_I1 = "<b 0xc10000000114367096bb0fb3f58f3a3fb8aaacd61d63a1c8a40e14f7374b8a62
 bot = telebot.TeleBot(BOT_TOKEN)
 user_data, admin_state = {}, {}
 
-# اتصال به دیتابیس ابری (MongoDB)
 client = pymongo.MongoClient(MONGO_URI)
 db = client['kiawire_bot']
 users_col = db['users']
@@ -55,7 +54,6 @@ def scheduler():
                     try: 
                         kb_app = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 دانلود برنامه NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="primary"))
                         bot.send_message(w['user_id'], f"🎉 **تبریک {w['first_name']}!**\nشما برنده **{d['title']}** شدید.\n\n✅ **کانفیگ AWG شما:**\n\n```\n{gen_config()}\n```\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ.", reply_markup=kb_app, parse_mode='Markdown')
-                        
                         consent_text = "از شما خواهش میکنیم از طریق دکمه زیر رضایت خود را از چالش اعلام کنید."
                         kb_consent = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ اعلام رضایت", callback_data=f"consent_{did}_{w['user_id']}", style="primary"))
                         bot.send_message(w['user_id'], consent_text, reply_markup=kb_consent, parse_mode='Markdown')
@@ -67,7 +65,7 @@ def scheduler():
                 except: pass
             draws_col.update_one({"id": did}, {"$set": {"status": "finished"}})
         time.sleep(15)
-
+        
 @bot.message_handler(commands=['start'])
 def start(m):
     uid, cid, name = m.from_user.id, m.chat.id, m.from_user.first_name
@@ -258,12 +256,124 @@ def wiz_chan(m):
     try:
         mid = bot.send_message(channel, f"🎉 **{data['title']}**\nبرای شرکت کلیک کن:", reply_markup=kb, parse_mode='Markdown').message_id
         draws_col.update_one({"id": did}, {"$set": {"message_id": mid}})
-            msg_text = (
-        f"✅ **قرعه‌کشی ارسال شد!**\n\n"
-        f"لینک اختصاصی:\n"
-        f"https://t.me/{BOT_USERNAME}?start=draw_{did}"
-    )
-    bot.send_message(m.chat.id, msg_text, parse_mode='Markdown')
-except Exception as e:
-    bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
-start(m)
+        msg_text = (
+            f"✅ **قرعه‌کشی ارسال شد!**\n\n"
+            f"لینک اختصاصی:\n"
+            f"https://t.me/{BOT_USERNAME}?start=draw_{did}"
+        )
+        bot.send_message(m.chat.id, msg_text, parse_mode='Markdown')
+    except Exception as e: bot.send_message(m.chat.id, f"⚠️ خطا: {e}")
+    start(m)
+
+@bot.callback_query_handler(func=lambda c: c.data == "list_users" and is_admin(c.from_user.id))
+def list_users(c):
+    bot.answer_callback_query(c.id)
+    users = list(users_col.find().limit(20))
+    if not users: return bot.send_message(c.message.chat.id, "خالی است.")
+    kb = types.InlineKeyboardMarkup(row_width=2).add(*[types.InlineKeyboardButton(u['first_name'], callback_data=f"u_{u['user_id']}", style="primary") for u in users])
+    bot.send_message(c.message.chat.id, "👥 **کاربران:**", reply_markup=kb, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("u_") and is_admin(c.from_user.id))
+def user_panel(c):
+    bot.answer_callback_query(c.id); tid = int(c.data.split("_")[1])
+    u = users_col.find_one({"user_id": tid})
+    cnt = configs_col.count_documents({"user_id": tid})
+    kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🚫 بن", callback_data=f"ban_{tid}", style="danger"), types.InlineKeyboardButton("👑 ادمین", callback_data=f"adm_{tid}", style="success"))
+    bot.edit_message_text(f"👤 **{u['first_name']}**\n🆔 `{tid}`\n⚙️ کانفیگ: {cnt}\n📊 {['🟢 فعال','🚫 مسدود'][u['is_banned']]} | {['👤 کاربر','👑 ادمین'][u['is_admin']]}", c.message.chat.id, c.message.message_id, reply_markup=kb, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ban_") or c.data.startswith("adm_"))
+def adm_action(c):
+    if c.from_user.id != SUPER_ADMIN_ID: return bot.answer_callback_query(c.id, "فقط مدیر!")
+    act, tid = c.data.split("_")[0], int(c.data.split("_")[1])
+    users_col.update_one({"user_id": tid}, {"$set": {"is_banned" if act=="ban" else "is_admin": 1}})
+    bot.answer_callback_query(c.id, "✅ انجام شد."); bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=None)
+
+@bot.callback_query_handler(func=lambda c: c.data == "toggle_lock" and is_admin(c.from_user.id))
+def toggle_lock(c): 
+    bot.answer_callback_query(c.id)
+    set_setting('bot_locked', '0' if get_setting('bot_locked')=='1' else '1')
+    admin_panel(c.message)
+
+@bot.callback_query_handler(func=lambda c: c.data == "set_limit" and is_admin(c.from_user.id))
+def set_limit(c):
+    bot.answer_callback_query(c.id)
+    msg = bot.send_message(c.message.chat.id, "عدد را بفرست:", reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("🔙 لغو"))
+    bot.register_next_step_handler(msg, lambda m: (set_setting('limit', int(m.text)), start(m)) if m.text.isdigit() else bot.send_message(m.chat.id, "❌ عدد!"))
+
+@bot.message_handler(func=lambda m: m.text == "📢 پیام همگانی" and is_admin(m.chat.id))
+def bc(m):
+    msg = bot.send_message(m.chat.id, "متن پیام:", reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("🔙 لغو"))
+    bot.register_next_step_handler(msg, lambda m: (send_broadcast(m), start(m)))
+
+def send_broadcast(m):
+    users = users_col.find({"is_banned": 0})
+    for u in users:
+        try: bot.send_message(u['user_id'], f"📢 **پیام همگانی:**\n\n{m.text}", parse_mode='Markdown')
+        except: pass
+    bot.send_message(m.chat.id, "✅ ارسال شد.")
+    
+@bot.message_handler(func=lambda m: m.text == "📚 آموزش اتصال")
+def tut(m):
+    bot.send_message(m.chat.id, "📚 **آموزش:**\n1️⃣ NikaNG باز کن.\n2️⃣ + بزن.\n3️⃣ Import from Clipboard.\n4️⃣ کانفیگ پیست کن.", parse_mode='Markdown')
+
+@bot.message_handler(func=lambda m: m.text == "🛠 ساخت کانفیگ")
+def cfg_start(m):
+    uid = m.from_user.id
+    if is_banned(uid): return
+    if get_setting('bot_locked') == '1' and not is_admin(uid): return bot.send_message(uid, "⛔️ بسته است.")
+    if configs_col.count_documents({"user_id": uid}) >= int(get_setting('limit')): return bot.send_message(uid, "❌ محدودیت پر شد.")
+    user_data[uid] = {}
+    kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger"))
+    bot.send_message(uid, "اول NikaNG رو دانلود کن:", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda c: c.data == "c_1")
+def cfg_name(c):
+    bot.answer_callback_query(c.id) 
+    user_data[c.message.chat.id] = {}
+    bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎲 خودکار", callback_data="c_rand", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")))
+
+@bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
+def cfg_cancel(c):
+    bot.answer_callback_query(c.id) 
+    user_data.pop(c.message.chat.id, None); bot.edit_message_text("لغو شد.", c.message.chat.id, c.message.message_id); start(c.message)
+
+@bot.callback_query_handler(func=lambda c: c.data == "c_rand")
+def cfg_rand(c):
+    bot.answer_callback_query(c.id) 
+    n = random.choice(RANDOM_NAMES) + "-" + str(random.randint(10,99)); user_data[c.message.chat.id]['name'] = f"{n} (KiarashAi)"
+    bot.edit_message_text(f"اسم: **{n} (KiarashAi)**", c.message.chat.id, c.message.message_id, reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
+
+@bot.message_handler(func=lambda m: m.chat.id in user_data and 'name' not in user_data[m.chat.id])
+def cfg_get_name(m):
+    user_data[m.chat.id]['name'] = f"{m.text} (KiarashAi)"
+    bot.send_message(m.chat.id, f"اسم: **{m.text} (KiarashAi)**", reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data == "c_gen")
+def cfg_gen(c):
+    bot.answer_callback_query(c.id) 
+    cid = c.message.chat.id
+    if cid not in user_data: return
+    bot.edit_message_text("⏳ در حال ساخت...", cid, c.message.message_id)
+    cfg = gen_config()
+    configs_col.insert_one({"user_id": cid, "config_name": user_data[cid]['name'], "created_at": str(datetime.datetime.now())})
+    
+    txt = f"✅ **کانفیگ AWG شما:**\n\n```\n{cfg}\n```\n📚 **آموزش:** کپی کن، توی NikaNG Import کن.\n⚠️ **هشدار:** بیش از ۴۰۰ گیگ مصرف نکن.\n🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ."
+    bot.send_message(cid, txt, parse_mode='Markdown')
+    
+    bot.send_message(SUPER_ADMIN_ID, f"🔔 **کانفیگ جدید!**\n👤 {c.message.chat.first_name}\n🆔 `{cid}`", parse_mode='Markdown')
+    user_data.pop(cid, None)
+
+app = Flask(__name__)
+@app.route('/')
+def index(): return "Bot is running!"
+@app.route('/health')
+def health(): return "OK"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+if __name__ == "__main__":
+    threading.Thread(target=scheduler, daemon=True).start()
+    threading.Thread(target=run_flask, daemon=True).start()
+    bot.remove_webhook()
+    bot.infinity_polling()
