@@ -168,7 +168,7 @@ def wiz_dur(c):
 
 def wiz_dur_m(m):
     if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ عدد بفرست!")
-    admin_state[m.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30, minutes=int(m.text))).strftime("%Y-%m-%d %H:%M:%S")
+    admin_state[m.from_user.id]['end_time'] = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30 + int(m.text))).strftime("%Y-%m-%d %H:%M:%S")
     bot.send_message(m.chat.id, f"✅ زمان: {m.text} دقیقه")
     kb = types.InlineKeyboardMarkup(row_width=3).add(
         *[types.InlineKeyboardButton(f"👥 {t}", callback_data=f"c_{v}", style="primary") for t,v in [("۱۰",10),("۵۰",50),("۱۰۰",100),("۵۰۰",500)]],
