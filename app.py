@@ -2,9 +2,10 @@ import os, threading, telebot, sqlite3, random, datetime, time, json, base64, ur
 from flask import Flask
 from telebot import types
 
-BOT_TOKEN = "8906649902:AAEJHKZq-K7mVqXrIbt7OYTf_YjC8cey_h4"
+# خواندن توکن از Environment رندر
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SUPER_ADMIN_ID = 8639658675
-BOT_USERNAME = "Configsakiabot"
+BOT_USERNAME = "Kiapanelbot" # آیدی جدید رباتت رو بذار
 
 CLEAN_IPS = ["8.34.70.64:2408", "8.6.112.224:2408", "188.114.98.12:2408", "8.34.70.120:2408", "8.35.211.2:2408", "188.114.96.70:2408", "188.114.99.75:2408", "8.39.214.218:2408", "188.114.99.6:2408", "8.34.70.169:2408"]
 RANDOM_NAMES = ["Ghost", "Ninja", "Warp", "Pro", "Shadow", "Turbo", "VIP", "Smart", "Ultra", "Fast"]
@@ -108,12 +109,13 @@ def start(m):
         try: bot.send_message(SUPER_ADMIN_ID, f"🔔 **کاربر جدید!**\n👤 {name}\n🆔 `{uid}`", reply_markup=nm, parse_mode='Markdown')
         except: pass
 
+    # حذف دکمه کانفیگ های من از اینجا
     m_kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if is_admin(uid):
-        m_kb.add("🛠 ساخت کانفیگ", "👑 پنل", "📁 کانفیگ‌های من", "📢 پیام همگانی")
+        m_kb.add("🛠 ساخت کانفیگ", "👑 پنل", "📢 پیام همگانی")
         bot.send_message(cid, f"سلام {name} عزیز، به پنل خوش اومدی 👑", reply_markup=m_kb)
     else:
-        m_kb.add("🛠 ساخت کانفیگ", "📁 کانفیگ‌های من", "📚 آموزش اتصال")
+        m_kb.add("🛠 ساخت کانفیگ", "📚 آموزش اتصال")
         bot.send_message(cid, f"سلام {name} عزیز، خوش اومدی 🚀", reply_markup=m_kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "noop")
@@ -172,13 +174,18 @@ def cancel(m):
 def admin_panel(m):
     u = db_query("SELECT COUNT(*) FROM users", fetch=True)[0]; cf = db_query("SELECT COUNT(*) FROM configs", fetch=True)[0]
     lim, lk = get_setting('limit'), get_setting('bot_locked')
-    kb = types.InlineKeyboardMarkup(row_width=1).add(
-        types.InlineKeyboardButton("📊 لیست کاربران", callback_data="list_users", style="primary"),
-        types.InlineKeyboardButton("⚙️ تنظیم محدودیت", callback_data="set_limit", style="primary"),
-        types.InlineKeyboardButton("🎁 تنظیم قرعه‌کشی", callback_data="setup_draw", style="success"),
-        types.InlineKeyboardButton("🔐 قفل/باز" if lk!='1' else "🔓 باز کردن", callback_data="toggle_lock", style="danger" if lk!='1' else "success")
-    )
-    bot.send_message(m.chat.id, f"👑 **آمار**\n👥 کاربران: {u}\n⚙️ کانفیگ‌ها: {cf}\n📊 محدودیت: {lim}\n🔒 وضعیت: {'🔴 قفل' if lk=='1' else '🟢 باز'}", reply_markup=kb, parse_mode='Markdown')
+    text = f"👑 **آمار**\n👥 کاربران: {u}\n⚙️ کانفیگ‌ها: {cf}\n📊 محدودیت: {lim}\n🔒 وضعیت: {'🔴 قفل' if lk=='1' else '🟢 باز'}"
+    
+    # دکمه های پنل به حالت تک ستونه و بزرگ برگشتند
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("📊 آمار و لیست کاربران", callback_data="list_users", style="primary"))
+    kb.add(types.InlineKeyboardButton("⚙️ تنظیم محدودیت کاربران", callback_data="set_limit", style="primary"))
+    kb.add(types.InlineKeyboardButton("🎁 تنظیم قرعه‌کشی", callback_data="setup_draw", style="success"))
+    lock_btn_style = "danger" if lk != '1' else "success"
+    lock_btn_text = "🔐 قفل کردن ربات" if lk != '1' else "🔓 باز کردن ربات"
+    kb.add(types.InlineKeyboardButton(lock_btn_text, callback_data="toggle_lock", style=lock_btn_style))
+    
+    bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data == "setup_draw" and is_admin(c.from_user.id))
 def wiz_start(c):
