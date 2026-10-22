@@ -16,7 +16,7 @@ import urllib.request
 # ==========================================
 BOT_TOKEN = "8735994962:AAEqIvHJz28coYZ0asXITCNKwU4tbih0idM"
 SUPER_ADMIN_ID = 8639658675
-BOT_USERNAME = "Configsakiabot"
+BOT_USERNAME = "Configsakiabot" # نام کاربری رباتت بدون @
 
 CLEAN_IPS = ["8.34.70.64:2408", "8.6.112.224:2408", "188.114.98.12:2408", "8.34.70.120:2408", "8.35.211.2:2408", "188.114.96.70:2408", "188.114.99.75:2408", "8.39.214.218:2408", "188.114.99.6:2408", "8.34.70.169:2408"]
 RANDOM_NAMES = ["Ghost-Gaming", "Cloud-Ninja", "Warp-Speed", "Pro-Config", "Shadow-Net", "Turbo-Ping", "VIP-Wire", "Smart-Link", "Ultra-Game", "Fast-Warp"]
@@ -40,7 +40,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, config_name TEXT, size TEXT, time TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS draws 
-                 (id INTEGER PRIMARY KEY, channel TEXT, start_hour TEXT, end_hour TEXT, title TEXT, status TEXT, message_id INTEGER, date TEXT, winners_count INTEGER DEFAULT 1)''')
+                 (id INTEGER PRIMARY KEY, channel TEXT, end_time TEXT, title TEXT, status TEXT, message_id INTEGER, max_parts INTEGER, winners_count INTEGER DEFAULT 1)''')
     c.execute('''CREATE TABLE IF NOT EXISTS participants (draw_id INTEGER, user_id INTEGER, first_name TEXT)''')
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('limit', '3')")
     c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('bot_locked', '0')")
@@ -148,33 +148,18 @@ def draw_scheduler():
     while True:
         try:
             now = datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30)
-            current_time = now.strftime("%H:%M")
-            today_date = now.strftime("%Y-%m-%d")
+            current_time = now.strftime("%Y-%m-%d %H:%M:%S")
             
             conn = sqlite3.connect('bot_data.db')
             c = conn.cursor()
             
-            c.execute("SELECT id, channel, title, winners_count FROM draws WHERE status = 'pending' AND start_hour = ? AND date = ?", (current_time, today_date))
-            for draw in c.fetchall():
-                draw_id, channel, title, winners_count = draw
-                markup = types.InlineKeyboardMarkup()
-                join_url = f"https://t.me/{BOT_USERNAME}?start=join_{draw_id}"
-                
-                markup.add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=join_url, style="success"))
-                markup.add(types.InlineKeyboardButton("0 شرکت کننده 💫", callback_data="noop", style="primary"))
-                
-                try:
-                    msg = bot.send_message(channel, f"🎉 **{title}**\n\nبرای شرکت در قرعه کشی روی دکمه سبز زیر کلیک کنید:", reply_markup=markup, parse_mode='Markdown')
-                    c.execute("UPDATE draws SET status = 'active', message_id = ? WHERE id = ?", (msg.message_id, draw_id))
-                    conn.commit()
-                except Exception as e:
-                    print(f"Channel Error: {e}")
-
-            c.execute("SELECT id, channel, title, message_id, winners_count FROM draws WHERE status = 'active' AND end_hour = ? AND date = ?", (current_time, today_date))
+            # پیدا کردن قرعه کشی‌های فعالی که زمانشون تموم شده
+            c.execute("SELECT id, channel, title, message_id, winners_count FROM draws WHERE status = 'active' AND end_time <= ?", (current_time,))
             for draw in c.fetchall():
                 draw_id, channel, title, msg_id, winners_count = draw
                 c.execute("SELECT user_id, first_name FROM participants WHERE draw_id = ?", (draw_id,))
                 parts = c.fetchall()
+                
                 if not parts:
                     bot.send_message(channel, f"⚠️ **{title}**\n\nهیچ‌کس شرکت نکرد!", reply_to_message_id=msg_id)
                 else:
@@ -205,7 +190,7 @@ def draw_scheduler():
             conn.close()
         except Exception as e:
             print(f"Scheduler Error: {e}")
-        time.sleep(30)
+        time.sleep(15)
         
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -219,12 +204,12 @@ def start(message):
     name = message.from_user.first_name
     
     args = message.text.split()
-    if len(args) > 1 and args[1].startswith("join_"):
+    if len(args) > 1 and args[1].startswith("draw_"):
         draw_id = int(args[1].split("_")[1])
         
         conn = sqlite3.connect('bot_data.db')
         c = conn.cursor()
-        c.execute("SELECT channel, status, message_id FROM draws WHERE id = ?", (draw_id,))
+        c.execute("SELECT channel, status, message_id, max_parts FROM draws WHERE id = ?", (draw_id,))
         draw = c.fetchone()
         
         if not draw or draw[1] != 'active':
@@ -232,7 +217,15 @@ def start(message):
             conn.close()
             return
 
-        channel, status, msg_id = draw
+        channel, status, msg_id, max_parts = draw
+
+        c.execute("SELECT COUNT(*) FROM participants WHERE draw_id = ?", (draw_id,))
+        count = c.fetchone()[0]
+
+        if max_parts > 0 and count >= max_parts:
+            bot.send_message(chat_id, "⚠️ **ظرفیت این قرعه‌کشی پر شده است!**", parse_mode='Markdown')
+            conn.close()
+            return
 
         c.execute("SELECT * FROM participants WHERE draw_id = ? AND user_id = ?", (draw_id, user_id))
         if c.fetchone():
@@ -241,18 +234,19 @@ def start(message):
             return
 
         c.execute("INSERT INTO participants (draw_id, user_id, first_name) VALUES (?, ?, ?)", (draw_id, user_id, name))
-        c.execute("SELECT COUNT(*) FROM participants WHERE draw_id = ?", (draw_id,))
-        count = c.fetchone()[0]
         conn.commit()
+        
+        c.execute("SELECT COUNT(*) FROM participants WHERE draw_id = ?", (draw_id,))
+        new_count = c.fetchone()[0]
         conn.close()
 
         bot.send_message(chat_id, "✅ **با موفقیت در قرعه‌کشی شرکت کردید!**\n\nمنتظر اعلام نتایج باشید.", parse_mode='Markdown')
 
         try:
             markup = types.InlineKeyboardMarkup()
-            join_url = f"https://t.me/{BOT_USERNAME}?start=join_{draw_id}"
-            markup.add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=join_url, style="success"))
-            markup.add(types.InlineKeyboardButton(f"{count} شرکت کننده 💫", callback_data="noop", style="primary"))
+            join_url = f"https://t.me/{BOT_USERNAME}?start=draw_{draw_id}"
+            markup.add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=join_url, style="primary"))
+            markup.add(types.InlineKeyboardButton(f"{new_count} شرکت کننده 💫", callback_data="noop", style="primary"))
             bot.edit_message_reply_markup(chat_id=channel, message_id=msg_id, reply_markup=markup)
         except Exception as e:
             print(f"Error updating channel: {e}")
@@ -277,7 +271,7 @@ def start(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "noop")
 def noop_callback(call):
-    bot.answer_callback_query(call.id, "برای شرکت روی دکمه سبز کلیک کنید.")
+    bot.answer_callback_query(call.id, "برای شرکت روی دکمه آبی کلیک کنید.")
 
 @bot.message_handler(func=lambda message: message.text == "🔙 لغو و بازگشت")
 def global_cancel(message):
@@ -297,13 +291,8 @@ def admin_panel_btn(message):
     current_limit = get_setting('limit')
     is_locked = get_setting('bot_locked') == '1'
     lock_status = "🔴 قفل" if is_locked else "🟢 باز"
-    text = (
-        f"👑 **آمار ربات**\n\n"
-        f"👥 کل کاربرا: {total_users}\n"
-        f"⚙️ کل کانفیگ‌ها: {total_configs}\n\n"
-        f"📊 محدودیت: {current_limit} کانفیگ در ۲۴ ساعت\n"
-        f"🔒 وضعیت ربات: {lock_status}"
-    )
+    text = f"👑 **آمار ربات**\n\n👥 کل کاربرا: {total_users}\n⚙️ کل کانفیگ‌ها: {total_configs}\n\n📊 محدودیت: {current_limit} کانفیگ در ۲۴ ساعت\n🔒 وضعیت ربات: {lock_status}"
+    
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("📊 آمار و لیست کاربران", callback_data="list_users", style="primary"))
     markup.add(types.InlineKeyboardButton("⚙️ تنظیم محدودیت کاربران", callback_data="set_limit", style="primary"))
@@ -313,72 +302,143 @@ def admin_panel_btn(message):
     markup.add(types.InlineKeyboardButton(lock_btn_text, callback_data="toggle_lock", style=lock_btn_style))
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='Markdown')
 
+# ================= سیستم ویزارد قرعه کشی =================
 @bot.callback_query_handler(func=lambda call: call.data == "setup_draw" and is_admin(call.from_user.id))
 def start_draw_setup(call):
     bot.answer_callback_query(call.id)
-    saved_channel = get_setting('saved_channel')
-    if saved_channel:
-        admin_state[call.from_user.id] = {"channel": saved_channel, 'state': "waiting_draw_title"}
-        msg = bot.send_message(call.message.chat.id, "۱️⃣ **عنوان قرعه‌کشی** را وارد کنید:")
-        bot.register_next_step_handler(msg, process_draw_title)
-    else:
-        admin_state[call.from_user.id] = {'state': "waiting_draw_channel"}
-        msg = bot.send_message(call.message.chat.id, "۱️⃣ **آیدی کانال** خود را وارد کنید (مثلاً `@MyChannel`):")
-        bot.register_next_step_handler(msg, process_draw_channel)
-
-def process_draw_channel(message):
-    if not is_admin(message.from_user.id): return
-    set_setting('saved_channel', message.text)
-    admin_state[message.from_user.id] = {"channel": message.text, 'state': "waiting_draw_title"}
-    msg = bot.send_message(message.chat.id, "۲️⃣ **عنوان قرعه‌کشی** را وارد کنید:")
+    admin_state[call.from_user.id] = {}
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel_draw_setup", style="danger"))
+    
+    msg = bot.send_message(call.message.chat.id, "📝 **گام ۱/۵ — نام قرعه‌کشی**\n\nیه اسم برای قرعه‌کشیت بنویس (مثلاً: قرعه‌کشی کانفیگ رایگان):", reply_markup=markup, parse_mode='Markdown')
     bot.register_next_step_handler(msg, process_draw_title)
+
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_draw_setup" and is_admin(call.from_user.id))
+def cancel_draw_setup(call):
+    bot.answer_callback_query(call.id)
+    if call.from_user.id in admin_state: del admin_state[call.from_user.id]
+    bot.edit_message_text("❌ تنظیم قرعه‌کشی لغو شد.", call.message.chat.id, call.message.message_id)
+    start(call.message)
 
 def process_draw_title(message):
     if not is_admin(message.from_user.id): return
     admin_state[message.from_user.id]['title'] = message.text
-    admin_state[message.from_user.id]['state'] = "waiting_draw_winners_count"
-    msg = bot.send_message(message.chat.id, "۳️⃣ **تعداد برندگان** را وارد کنید (مثلاً `1`):")
-    bot.register_next_step_handler(msg, process_draw_winners_count)
+    bot.send_message(message.chat.id, f"✅ اسم ثبت شد: {message.text}")
+    
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        types.InlineKeyboardButton("⏱ ۵ دقیقه", callback_data="dur_5", style="primary"),
+        types.InlineKeyboardButton("⏱ ۱۰ دقیقه", callback_data="dur_10", style="primary"),
+        types.InlineKeyboardButton("⏱ ۳۰ دقیقه", callback_data="dur_30", style="primary")
+    )
+    markup.add(
+        types.InlineKeyboardButton("⏱ ۱ ساعت", callback_data="dur_60", style="primary"),
+        types.InlineKeyboardButton("⏱ ۲ ساعت", callback_data="dur_120", style="primary"),
+        types.InlineKeyboardButton("⏱ ۲۴ ساعت", callback_data="dur_1440", style="primary")
+    )
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel_draw_setup", style="danger"))
+    
+    bot.send_message(message.chat.id, "⏳ **گام ۲/۵ — مدت زمان**\n\nقرعه‌کشی چقدر طول بکشه؟", reply_markup=markup, parse_mode='Markdown')
 
-def process_draw_winners_count(message):
-    if not is_admin(message.from_user.id): return
-    if not message.text.isdigit(): return bot.send_message(message.chat.id, "❌ فقط عدد!")
-    admin_state[message.from_user.id]['winners_count'] = int(message.text)
-    admin_state[message.from_user.id]['state'] = "waiting_draw_start"
-    msg = bot.send_message(message.chat.id, "۴️⃣ **ساعت شروع** را وارد کنید (مثلاً `14:00`):")
-    bot.register_next_step_handler(msg, process_draw_start)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("dur_") and is_admin(call.from_user.id))
+def process_draw_duration(call):
+    bot.answer_callback_query(call.id)
+    minutes = int(call.data.split("_")[1])
+    
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30)
+    end_time = now + datetime.timedelta(minutes=minutes)
+    admin_state[call.from_user.id]['end_time'] = end_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    bot.edit_message_text(f"✅ زمان ثبت شد: {minutes} دقیقه", call.message.chat.id, call.message.message_id)
+    
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        types.InlineKeyboardButton("👥 ۱۰ نفر", callback_data="cap_10", style="primary"),
+        types.InlineKeyboardButton("👥 ۵۰ نفر", callback_data="cap_50", style="primary"),
+        types.InlineKeyboardButton("👥 ۱۰۰ نفر", callback_data="cap_100", style="primary")
+    )
+    markup.add(
+        types.InlineKeyboardButton("👥 ۵۰۰ نفر", callback_data="cap_500", style="primary"),
+        types.InlineKeyboardButton("♾ بدون محدودیت", callback_data="cap_0", style="success")
+    )
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel_draw_setup", style="danger"))
+    
+    bot.send_message(call.message.chat.id, "🚀 **گام ۳/۵ — ظرفیت**\n\nحداکثر چند نفر می‌تونن شرکت کنن؟", reply_markup=markup, parse_mode='Markdown')
 
-def process_draw_start(message):
-    if not is_admin(message.from_user.id): return
-    admin_state[message.from_user.id]['start_hour'] = message.text
-    admin_state[message.from_user.id]['state'] = "waiting_draw_end"
-    msg = bot.send_message(message.chat.id, "۵️⃣ **ساعت پایان** را وارد کنید (مثلاً `18:00`):")
-    bot.register_next_step_handler(msg, process_draw_end)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("cap_") and is_admin(call.from_user.id))
+def process_draw_capacity(call):
+    bot.answer_callback_query(call.id)
+    max_parts = int(call.data.split("_")[1])
+    admin_state[call.from_user.id]['max_parts'] = max_parts
+    
+    cap_text = "بدون محدودیت" if max_parts == 0 else f"{max_parts} نفر"
+    bot.edit_message_text(f"✅ ظرفیت ثبت شد: {cap_text}", call.message.chat.id, call.message.message_id)
+    
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        types.InlineKeyboardButton("🏆 ۱ برنده", callback_data="win_1", style="primary"),
+        types.InlineKeyboardButton("🏆 ۲ برنده", callback_data="win_2", style="primary"),
+        types.InlineKeyboardButton("🏆 ۳ برنده", callback_data="win_3", style="primary")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🏆 ۵ برنده", callback_data="win_5", style="primary"),
+        types.InlineKeyboardButton("🏆 ۱۰ برنده", callback_data="win_10", style="primary")
+    )
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel_draw_setup", style="danger"))
+    
+    bot.send_message(call.message.chat.id, "🎁 **گام ۴/۵ — تعداد برنده‌ها**\n\nچند نفر برنده میشن؟", reply_markup=markup, parse_mode='Markdown')
 
-def process_draw_end(message):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("win_") and is_admin(call.from_user.id))
+def process_draw_winners(call):
+    bot.answer_callback_query(call.id)
+    winners = int(call.data.split("_")[1])
+    admin_state[call.from_user.id]['winners'] = winners
+    
+    bot.edit_message_text(f"✅ تعداد برنده‌ها ثبت شد: {winners} نفر", call.message.chat.id, call.message.message_id)
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="cancel_draw_setup", style="danger"))
+    
+    msg = bot.send_message(call.message.chat.id, "📢 **گام ۵/۵ — کانال**\n\nحالا آیدی کانال خودت رو بفرست (مثلاً `@MyChannel`).\n\n⚠️ ربات باید ادمین کانال باشه!", reply_markup=markup, parse_mode='Markdown')
+    bot.register_next_step_handler(msg, process_draw_channel)
+
+def process_draw_channel(message):
     if not is_admin(message.from_user.id): return
-    end_time = message.text
+    channel = message.text
     data = admin_state[message.from_user.id]
+    
     conn = sqlite3.connect('bot_data.db')
     c = conn.cursor()
-    today_date = (datetime.datetime.utcnow() + datetime.timedelta(hours=3, minutes=30)).strftime("%Y-%m-%d")
-    c.execute("INSERT INTO draws (channel, start_hour, end_hour, title, status, date, winners_count) VALUES (?, ?, ?, ?, 'pending', ?, ?)", (data['channel'], data['start_hour'], end_time, data['title'], today_date, data['winners_count']))
+    c.execute("INSERT INTO draws (channel, end_time, title, status, max_parts, winners_count) VALUES (?, ?, ?, 'active', ?, ?)", 
+              (channel, data['end_time'], data['title'], data['max_parts'], data['winners']))
+    draw_id = c.lastrowid
     conn.commit()
     conn.close()
+    
     del admin_state[message.from_user.id]
     
-    msg_text = (
-        f"✅ **قرعه‌کشی تنظیم شد!**\n\n"
-        f"📅 تاریخ: امروز\n"
-        f"⏰ از {data['start_hour']} تا {end_time}\n"
-        f"📢 کانال: {data['channel']}\n"
-        f"🎁 عنوان: {data['title']}\n"
-        f"🏆 تعداد برندگان: {data['winners_count']}\n\n"
-        f"ربات در زمان مشخص شده، پیام می‌ذاره."
-    )
-    bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
+    join_url = f"https://t.me/{BOT_USERNAME}?start=draw_{draw_id}"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🎁 شرکت در قرعه‌کشی", url=join_url, style="primary"))
+    markup.add(types.InlineKeyboardButton("0 شرکت کننده 💫", callback_data="noop", style="primary"))
+    
+    try:
+        msg = bot.send_message(channel, f"🎉 **{data['title']}**\n\nبرای شرکت در قرعه کشی روی دکمه زیر کلیک کنید:", reply_markup=markup, parse_mode='Markdown')
+        # ذخیره آیدی پیام در کانال
+        conn = sqlite3.connect('bot_data.db')
+        c = conn.cursor()
+        c.execute("UPDATE draws SET message_id = ? WHERE id = ?", (msg.message_id, draw_id))
+        conn.commit()
+        conn.close()
+        
+        bot.send_message(message.chat.id, f"✅ **قرعه‌کشی با موفقیت در کانال ارسال شد!**\n\nلینک اختصاصی ربات:\n`{join_url}`", parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(message.chat.id, f"⚠️ خطا در ارسال پیام به کانال. مطمئن شو ربات ادمین کانال هست.\n\nخطا: {e}")
+    
     start(message)
 
+# ================= بقیه بخش‌های پنل =================
 @bot.callback_query_handler(func=lambda call: call.data == "list_users" and is_admin(call.from_user.id))
 def list_users(call):
     bot.answer_callback_query(call.id)
@@ -417,15 +477,7 @@ def user_panel(call):
         types.InlineKeyboardButton("🚫 مسدود کردن", callback_data=f"ban_{target_id}", style="danger"),
         types.InlineKeyboardButton("👑 تنظیم ادمین", callback_data=f"admin_{target_id}", style="success")
     )
-    text = (
-        f"👤 **پنل کاربر:** {name}\n"
-        f"🆔 **آیدی عددی:** `{target_id}`\n"
-        f"🔗 **یوزرنیم:** {user_link}\n"
-        f"📅 **تاریخ عضویت:** {reg_date}\n\n"
-        f"⚙️ **تعداد کانفیگ‌های ساخته شده:** {config_count}\n\n"
-        f"📊 **وضعیت:** {status}\n"
-        f"👑 **نقش:** {role}"
-    )
+    text = f"👤 **پنل کاربر:** {name}\n🆔 **آیدی عددی:** `{target_id}`\n🔗 **یوزرنیم:** {user_link}\n📅 **تاریخ عضویت:** {reg_date}\n\n⚙️ **تعداد کانفیگ‌های ساخته شده:** {config_count}\n\n📊 **وضعیت:** {status}\n👑 **نقش:** {role}"
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("ban_") or call.data.startswith("admin_"))
