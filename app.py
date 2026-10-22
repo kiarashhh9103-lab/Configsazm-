@@ -84,6 +84,7 @@ def start(m):
     if is_banned(uid): return bot.send_message(cid, "⛔️ مسدود هستید.")
     is_new = add_user(uid, name, m.from_user.username)
     
+    # --- بررسی لینک قرعه‌کشی ---
     args = m.text.split()
     if len(args) > 1 and args[1].startswith("draw_"):
         did = int(args[1].split("_")[1])
@@ -104,29 +105,79 @@ def start(m):
         else: bot.send_message(cid, "❌ بسته شده.")
         conn.close(); return
 
+    # --- اطلاع‌رسانی کاربر جدید به ادمین ---
     if is_new and not is_admin(uid):
         nm = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🚫 بن", callback_data=f"ban_{uid}", style="danger"), types.InlineKeyboardButton("👑 ادمین", callback_data=f"adm_{uid}", style="success"))
         try: bot.send_message(SUPER_ADMIN_ID, f"🔔 **کاربر جدید!**\n👤 {name}\n🆔 `{uid}`", reply_markup=nm, parse_mode='Markdown')
         except: pass
 
+    # --- ساخت منوی اصلی (با دکمه ارتباط با سازنده) ---
     m_kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if is_admin(uid):
         m_kb.add("🛠 ساخت کانفیگ", "👑 پنل", "📢 پیام همگانی")
+        m_kb.add("📞 ارتباط با سازنده")
         bot.send_message(cid, f"سلام {name} عزیز، به پنل خوش اومدی 👑", reply_markup=m_kb)
     else:
         m_kb.add("🛠 ساخت کانفیگ", "📚 آموزش اتصال")
+        m_kb.add("📞 ارتباط با سازنده")
         bot.send_message(cid, f"سلام {name} عزیز، خوش اومدی 🚀", reply_markup=m_kb)
 
-@bot.callback_query_handler(func=lambda c: c.data == "noop")
-def noop(c): 
-    bot.answer_callback_query(c.id, "برای شرکت روی دکمه آبی کلیک کن.")
+# ================= سیستم تیکت (ارتباط با سازنده) =================
 
-@bot.message_handler(func=lambda m: m.text == "🔙 لغو")
-def cancel(m):
-    user_data.pop(m.from_user.id, None)
-    admin_state.pop(m.from_user.id, None)
-    bot.send_message(m.chat.id, "✅ عملیات لغو شد.", reply_markup=types.ReplyKeyboardRemove())
-    start(m)
+@bot.message_handler(func=lambda m: m.text == "📞 ارتباط با سازنده")
+def contact_creator(m):
+    uid = m.from_user.id
+    
+    # اگر خودت روی دکمه زدی، پیام بده که نیازی نیست
+    if uid == SUPER_ADMIN_ID:
+        return bot.send_message(m.chat.id, "شما خودتان سازنده ربات هستید! 😄")
+        
+    # پاک کردن استیت‌های قبلی (اگر وسط ساخت کانفیگ بوده، لغو بشه)
+    user_data.pop(uid, None)
+    
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("✉️ ارسال تیکت به سازنده", callback_data="send_ticket", style="primary"))
+    kb.add(types.InlineKeyboardButton("🔙 لغو", callback_data="cancel_ticket", style="danger"))
+    
+    text = f"👨‍💻 **سازنده ربات:** @KiarashAi\n🆔 **آیدی عددی:** `{SUPER_ADMIN_ID}`\n\nاگر سوال یا مشکلی دارید، می‌توانید از طریق دکمه زیر پیام ارسال کنید:"
+    bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda c: c.data == "send_ticket")
+def prompt_ticket(c):
+    bot.answer_callback_query(c.id)
+    user_data[c.from_user.id] = {'action': 'waiting_ticket'} # وضعیت رو مشخص میکنیم
+    bot.edit_message_text("📝 لطفاً پیام خود را بنویسید. پیام شما مستقیماً به دست سازنده می‌رسد:", c.message.chat.id, c.message.message_id, reply_markup=None)
+
+@bot.callback_query_handler(func=lambda c: c.data == "cancel_ticket")
+def cancel_ticket(c):
+    bot.answer_callback_query(c.id, "لغو شد.")
+    if c.from_user.id in user_data:
+        del user_data[c.from_user.id]
+    bot.edit_message_text("❌ عملیات ارسال تیکت لغو شد.", c.message.chat.id, c.message.message_id)
+
+# دریافت پیام تیکت و ارسال به ادمین
+@bot.message_handler(func=lambda m: m.from_user.id in user_data and user_data[m.from_user.id].get('action') == 'waiting_ticket')
+def receive_ticket(m):
+    uid = m.from_user.id
+    name = m.from_user.first_name
+    username = f"@{m.from_user.username}" if m.from_user.username else "ندارد"
+    
+    ticket_text = (
+        f"📩 **تیکت جدید!**\n\n"
+        f"👤 **نام:** {name}\n"
+        f"🆔 **آیدی:** `{uid}`\n"
+        f"🔗 **یوزرنیم:** {username}\n\n"
+        f"📝 **متن پیام:**\n{m.text}"
+    )
+    
+    try:
+        bot.send_message(SUPER_ADMIN_ID, ticket_text, parse_mode='Markdown')
+        bot.send_message(m.chat.id, "✅ تیکت شما با موفقیت برای سازنده ارسال شد. به زودی پاسخ داده می‌شود.", reply_markup=types.ReplyKeyboardRemove())
+    except Exception as e:
+        bot.send_message(m.chat.id, "❌ خطایی در ارسال تیکت رخ داد. لطفاً بعداً تلاش کنید.")
+        
+    del user_data[uid] # پاک کردن وضعیت
+    start(m) # برگشت به منوی اصلی
 
 @bot.message_handler(func=lambda m: m.text == "👑 پنل" and is_admin(m.chat.id))
 def admin_panel(m):
@@ -159,20 +210,31 @@ def show_user_panel(chat_id, message_id, tid):
     c_db.execute("SELECT COUNT(*) FROM configs WHERE user_id=?", (tid,))
     cnt = c_db.fetchone()[0]
     conn.close()
-    if not u: return
+    
+    if not u: 
+        return bot.send_message(chat_id, "کاربر یافت نشد.")
+        
     name, is_adm, is_bn, u_limit = u
     status = "🚫 مسدود" if is_bn else "🟢 فعال"
     role = "👑 ادمین" if is_adm else "👤 کاربر"
+    
     limit_text = "محدودیت کلی ربات" if u_limit == 0 else (f"{u_limit} بار در روز" if u_limit > 0 else "نامحدود")
+    
     text = f"👤 **{name}**\n🆔 `{tid}`\n⚙️ کانفیگ‌ها: {cnt}\n📊 {status} | {role}\n📈 محدودیت: {limit_text}"
+    
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton("👤 حذف ادمین" if is_adm else "👑 تنظیم ادمین", callback_data=f"tgl_adm_{tid}", style="danger" if is_adm else "success"))
     kb.add(types.InlineKeyboardButton("✅ حذف بن" if is_bn else "🚫 مسدود کردن", callback_data=f"tgl_ban_{tid}", style="success" if is_bn else "danger"))
     kb.add(types.InlineKeyboardButton("⚙️ تعویض محدودیت", callback_data=f"u_lim_{tid}", style="primary"))
     kb.add(types.InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_users", style="primary"))
-    try: bot.edit_message_text(text, chat_id, message_id, reply_markup=kb, parse_mode='Markdown')
-    except: bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
-
+    
+    try: 
+        if message_id:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=kb, parse_mode='Markdown')
+        else:
+            bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
+    except: 
+        bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
 @bot.callback_query_handler(func=lambda c: c.data.startswith("u_") and is_admin(c.from_user.id))
 def user_panel(c):
     bot.answer_callback_query(c.id)
@@ -218,19 +280,27 @@ def ask_u_limit(c):
 def save_u_limit(m):
     if m.text == "🔙 لغو": return cancel(m)
     if not m.text.lstrip('-').isdigit(): return bot.send_message(m.chat.id, "❌ فقط عدد بفرست!")
+    
     data = admin_state.get(m.from_user.id)
     if not data or data.get("action") != "set_u_limit": return
-    tid, msg_id = data["target"], data["msg_id"]
+    
+    tid = data["target"]
     new_lim = int(m.text)
+    
     conn = sqlite3.connect('bot_data.db'); c = conn.cursor()
     c.execute("UPDATE users SET config_limit=? WHERE user_id=?", (new_lim, tid))
     conn.commit(); conn.close()
+    
     lim_text = "محدودیت کلی ربات" if new_lim == 0 else (f"{new_lim} بار در روز" if new_lim > 0 else "نامحدود")
     bot.send_message(m.chat.id, f"✅ محدودیت کاربر روی **{lim_text}** تنظیم شد.", reply_markup=types.ReplyKeyboardRemove())
+    
     try: bot.send_message(tid, f"🔔 **نوتیف مدیریت:**\nمحدودیت ساخت کانفیگ شما به **{lim_text}** تغییر یافت.")
     except: pass
+    
     del admin_state[m.from_user.id]
-    show_user_panel(m.chat.id, msg_id, tid)
+    
+    # به جای ادیت کردن پیام قبلی، یه پیام جدید (پنل) می‌فرستیم تا مطمئن باشیم کار می‌کنه
+    show_user_panel(m.chat.id, None, tid) 
 
 @bot.callback_query_handler(func=lambda c: c.data == "toggle_lock" and is_admin(c.from_user.id))
 def toggle_lock(c): 
@@ -289,7 +359,7 @@ def cfg_start(m):
 def cfg_name(c):
     bot.answer_callback_query(c.id)
     user_data[c.message.chat.id] = {}
-    # دکمه های شیشه ای حذف شدند
+    # کاملا بدون دکمه شیشه ای
     bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
