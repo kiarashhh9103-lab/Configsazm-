@@ -250,6 +250,16 @@ def wiz_win(c):
     msg = bot.send_message(c.message.chat.id, "آیدی کانال (مثلاً @MyChannel):")
     bot.register_next_step_handler(msg, wiz_chan)
 
+def wiz_win(c):
+    bot.answer_callback_query(c.id)
+    if c.data == "m_win":
+        msg = bot.send_message(c.message.chat.id, "تعداد برنده‌ها را وارد کن (مثلاً 5):")
+        return bot.register_next_step_handler(msg, wiz_win_m)
+    admin_state[c.from_user.id]['winners'] = int(c.data.split("_")[1])
+    bot.edit_message_text("✅ ثبت شد.", c.message.chat.id, c.message.message_id)
+    msg = bot.send_message(c.message.chat.id, "آیدی کانال (مثلاً @MyChannel):")
+    bot.register_next_step_handler(msg, wiz_chan)
+
 def wiz_win_m(m):
     if not is_admin(m.from_user.id) or not m.text.isdigit(): return bot.send_message(m.chat.id, "❌ فقط عدد بفرست!")
     admin_state[m.from_user.id]['winners'] = int(m.text)
