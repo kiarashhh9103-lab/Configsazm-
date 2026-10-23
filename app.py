@@ -2,7 +2,6 @@ import os, threading, telebot, sqlite3, random, datetime, time, json, base64, ur
 from flask import Flask
 from telebot import types
 
-# توکن ربات
 BOT_TOKEN = "8906649902:AAGyFoPVl4w1sJANsiBRPP-48DtEAoSAOmI"
 SUPER_ADMIN_ID = 8639658675
 BOT_USERNAME = "Kiawirebot"
@@ -79,7 +78,7 @@ def scheduler():
                 conn.commit()
             conn.close()
         except Exception:
-            pass # جلوگیری از ارور Fatal
+            pass
         time.sleep(15)
         
 @bot.message_handler(commands=['start'])
@@ -116,13 +115,14 @@ def start(m):
     m_kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if is_admin(uid):
         m_kb.add("🛠 ساخت کانفیگ", "👑 پنل", "📢 پیام همگانی")
-        m_kb.add("📞 ارتباط با سازنده")
+        m_kb.add("📞 ارتباط با سازنده", "🏠 منوی اصلی")
         bot.send_message(cid, f"سلام {name} عزیز، به پنل خوش اومدی 👑", reply_markup=m_kb)
     else:
         m_kb.add("🛠 ساخت کانفیگ", "📚 آموزش اتصال")
-        m_kb.add("📞 ارتباط با سازنده")
+        m_kb.add("📞 ارتباط با سازنده", "🏠 منوی اصلی")
         bot.send_message(cid, f"سلام {name} عزیز، خوش اومدی 🚀", reply_markup=m_kb)
 
+# --- سیستم تیکت ---
 @bot.message_handler(func=lambda m: m.text == "📞 ارتباط با سازنده")
 def contact_creator(m):
     uid = m.from_user.id
@@ -131,7 +131,6 @@ def contact_creator(m):
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton("✉️ ارسال تیکت به سازنده", callback_data="send_ticket", style="primary"))
     kb.add(types.InlineKeyboardButton("🔙 لغو", callback_data="cancel_ticket", style="danger"))
-    # آیدی عددی حذف شد
     text = f"👨‍💻 **سازنده ربات:** @KiarashAi\n\nاگر سوال یا مشکلی دارید، می‌توانید از طریق دکمه زیر پیام ارسال کنید:"
     bot.send_message(m.chat.id, text, reply_markup=kb, parse_mode='Markdown')
 
@@ -139,13 +138,13 @@ def contact_creator(m):
 def prompt_ticket(c):
     bot.answer_callback_query(c.id)
     user_data[c.from_user.id] = {'action': 'waiting_ticket'}
-    bot.edit_message_text("📝 لطفاً پیام خود را بنویسید. پیام شما مستقیماً به دست سازنده می‌رسد:", c.message.chat.id, c.message.message_id, reply_markup=None)
+    bot.edit_message_text("📝 لطفاً پیام خود را بنویسید:", c.message.chat.id, c.message.message_id, reply_markup=None)
 
 @bot.callback_query_handler(func=lambda c: c.data == "cancel_ticket")
 def cancel_ticket(c):
     bot.answer_callback_query(c.id, "لغو شد.")
     if c.from_user.id in user_data: del user_data[c.from_user.id]
-    bot.edit_message_text("❌ عملیات ارسال تیکت لغو شد.", c.message.chat.id, c.message.message_id)
+    bot.edit_message_text("❌ لغو شد.", c.message.chat.id, c.message.message_id)
 
 @bot.message_handler(content_types=['text', 'photo', 'document', 'voice', 'video'], func=lambda m: m.from_user.id in user_data and user_data[m.from_user.id].get('action') == 'waiting_ticket')
 def receive_ticket(m):
@@ -153,12 +152,38 @@ def receive_ticket(m):
     name = m.from_user.first_name
     username = f"@{m.from_user.username}" if m.from_user.username else "ندارد"
     ticket_text = f"📩 **تیکت جدید!**\n\n👤 **نام:** {name}\n🆔 **آیدی:** `{uid}`\n🔗 **یوزرنیم:** {username}"
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("📝 پاسخ به تیکت", callback_data=f"reply_ticket_{uid}"))
+    
     try:
-        bot.send_message(SUPER_ADMIN_ID, ticket_text, parse_mode='Markdown')
+        bot.send_message(SUPER_ADMIN_ID, ticket_text, reply_markup=kb, parse_mode='Markdown')
         bot.forward_message(SUPER_ADMIN_ID, m.chat.id, m.message_id)
-        bot.send_message(m.chat.id, "✅ تیکت شما با موفقیت برای سازنده ارسال شد.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(m.chat.id, "✅ تیکت شما ارسال شد.", reply_markup=types.ReplyKeyboardRemove())
     except: bot.send_message(m.chat.id, "❌ خطایی رخ داد.")
     del user_data[uid]
+    start(m)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("reply_ticket_") and c.from_user.id == SUPER_ADMIN_ID)
+def prompt_reply_ticket(c):
+    bot.answer_callback_query(c.id)
+    target_uid = int(c.data.split("_")[2])
+    admin_state[SUPER_ADMIN_ID] = {"action": "replying_to_ticket", "target": target_uid}
+    msg = bot.send_message(SUPER_ADMIN_ID, f"📝 پاسخ خود را برای کاربر `{target_uid}` بنویسید:", parse_mode='Markdown')
+    bot.register_next_step_handler(msg, send_reply_ticket)
+
+def send_reply_ticket(m):
+    if m.from_user.id != SUPER_ADMIN_ID: return
+    data = admin_state.get(SUPER_ADMIN_ID)
+    if not data or data.get("action") != "replying_to_ticket": return
+    target_uid = data["target"]
+    del admin_state[SUPER_ADMIN_ID]
+    try:
+        bot.send_message(target_uid, f"📬 **پاسخ سازنده به تیکت شما:**\n\n{m.text}", parse_mode='Markdown')
+        bot.send_message(SUPER_ADMIN_ID, f"✅ پاسخ شما ارسال شد.", parse_mode='Markdown')
+    except: bot.send_message(SUPER_ADMIN_ID, f"❌ خطا در ارسال پاسخ به کاربر.")
+
+@bot.message_handler(func=lambda m: m.text == "🏠 منوی اصلی")
+def main_menu_handler(m):
     start(m)
 
 @bot.message_handler(func=lambda m: m.text == "🔙 لغو")
@@ -168,6 +193,7 @@ def cancel(m):
     bot.send_message(m.chat.id, "✅ عملیات لغو شد.", reply_markup=types.ReplyKeyboardRemove())
     start(m)
 
+# --- پنل ادمین ---
 @bot.message_handler(func=lambda m: m.text == "👑 پنل" and is_admin(m.chat.id))
 def admin_panel(m):
     u = db_query("SELECT COUNT(*) FROM users", fetch=True)[0]; cf = db_query("SELECT COUNT(*) FROM configs", fetch=True)[0]
@@ -316,33 +342,25 @@ def tut(m):
 def cfg_start(m):
     uid = m.from_user.id
     if is_banned(uid): return
-    
-    # بررسی محدودیت‌ها فقط برای کاربران عادی (ادمین‌ها و مالک همیشه دسترسی دارند)
     if not is_admin(uid):
-        if get_setting('bot_locked') == '1': 
-            return bot.send_message(uid, "⛔️ ساخت کانفیگ توسط مدیریت بسته شده است.")
-            
+        if get_setting('bot_locked') == '1': return bot.send_message(uid, "⛔️ بسته است.")
         u_limit = db_query("SELECT config_limit FROM users WHERE user_id=?", (uid,), fetch=True)[0]
         limit = int(get_setting('limit')) if u_limit == 0 else u_limit
-        
         if limit > 0 and db_query("SELECT COUNT(*) FROM configs WHERE user_id=?", (uid,), fetch=True)[0] >= limit:
             return bot.send_message(uid, "❌ محدودیت ساخت کانفیگ شما پر شده است.")
-    
-    # ادامه ساخت کانفیگ (برای ادمین‌ها همیشه اجرا میشه)
     user_data[uid] = {}
-    kb = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), 
-        types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), 
-        types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")
-    )
+    kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger"))
     bot.send_message(uid, "اول NikaNG رو دانلود کن:", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_1")
 def cfg_name(c):
     bot.answer_callback_query(c.id)
     user_data[c.message.chat.id] = {}
-    # دکمه های شیشه ای حذف شدند
+    # درخواست اسم با دکمه منوی اصلی
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("🏠 منوی اصلی", "🔙 لغو")
     bot.edit_message_text("اسم کانفیگت رو بنویس:", c.message.chat.id, c.message.message_id)
+    bot.send_message(c.message.chat.id, "👇", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_cancel")
 def cfg_cancel(c):
@@ -351,6 +369,8 @@ def cfg_cancel(c):
 
 @bot.message_handler(func=lambda m: m.chat.id in user_data and 'name' not in user_data[m.chat.id])
 def cfg_get_name(m):
+    if m.text == "🏠 منوی اصلی":
+        return start(m)
     user_data[m.chat.id]['name'] = f"{m.text} (KiarashAi)"
     bot.send_message(m.chat.id, f"اسم شد: **{m.text} (KiarashAi)**", reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("نامحدود ♾", callback_data="c_gen", style="success"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")), parse_mode='Markdown')
 
@@ -370,9 +390,9 @@ def cfg_gen(c):
         f"🎮 **توجه:** هم سرور گیمینگ و هم کانفیگ (پینگ ۷۰ تا ۸۵ میده ولی ریجسترش بد نیست)."
     )
     bot.send_message(cid, txt, parse_mode='Markdown')
-    
     bot.send_message(SUPER_ADMIN_ID, f"🔔 **کانفیگ جدید!**\n👤 {c.message.chat.first_name}\n🆔 `{cid}`", parse_mode='Markdown')
     user_data.pop(cid, None)
+    start(c.message)
 
 # ================= تنظیمات ویزارد قرعه‌کشی =================
 @bot.callback_query_handler(func=lambda c: c.data == "setup_draw" and is_admin(c.from_user.id))
