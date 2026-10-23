@@ -316,13 +316,25 @@ def tut(m):
 def cfg_start(m):
     uid = m.from_user.id
     if is_banned(uid): return
-    if get_setting('bot_locked') == '1' and not is_admin(uid): return bot.send_message(uid, "⛔️ بسته است.")
-    u_limit = db_query("SELECT config_limit FROM users WHERE user_id=?", (uid,), fetch=True)[0]
-    limit = int(get_setting('limit')) if u_limit == 0 else u_limit
-    if limit > 0 and db_query("SELECT COUNT(*) FROM configs WHERE user_id=?", (uid,), fetch=True)[0] >= limit:
-        return bot.send_message(uid, "❌ محدودیت ساخت کانفیگ شما پر شده است.")
+    
+    # بررسی محدودیت‌ها فقط برای کاربران عادی (ادمین‌ها و مالک همیشه دسترسی دارند)
+    if not is_admin(uid):
+        if get_setting('bot_locked') == '1': 
+            return bot.send_message(uid, "⛔️ ساخت کانفیگ توسط مدیریت بسته شده است.")
+            
+        u_limit = db_query("SELECT config_limit FROM users WHERE user_id=?", (uid,), fetch=True)[0]
+        limit = int(get_setting('limit')) if u_limit == 0 else u_limit
+        
+        if limit > 0 and db_query("SELECT COUNT(*) FROM configs WHERE user_id=?", (uid,), fetch=True)[0] >= limit:
+            return bot.send_message(uid, "❌ محدودیت ساخت کانفیگ شما پر شده است.")
+    
+    # ادامه ساخت کانفیگ (برای ادمین‌ها همیشه اجرا میشه)
     user_data[uid] = {}
-    kb = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger"))
+    kb = types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton("📥 NikaNG", url="https://github.com/mahsanet/NikaNG/releases/latest", style="success"), 
+        types.InlineKeyboardButton("✅ ادامه", callback_data="c_1", style="primary"), 
+        types.InlineKeyboardButton("🔙 لغو", callback_data="c_cancel", style="danger")
+    )
     bot.send_message(uid, "اول NikaNG رو دانلود کن:", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data == "c_1")
